@@ -148,7 +148,11 @@ class TitleScreenGame extends FlameGame<World> {
     _opponentSelector.removeFromParent();
     _playButton.removeFromParent();
 
-    _board = BoardComponent(size: _boardSize, position: size / 2);
+    _board = BoardComponent(
+      size: _boardSize,
+      position: size / 2,
+      vsAi: container.read(opponentProvider) == Opponent.robot,
+    );
     add(_board!);
     overlays.add(settingsOverlayKey);
   }
