@@ -208,15 +208,22 @@ void main() {
       game.update(MarkComponent.winAnimationDuration + 0.3);
       game.update(0.01);
       game.update(BoardComponent.winLineTraceDuration);
+      game.update(BoardComponent.endDialogDelay);
 
       expect(game.overlays.isActive(TitleScreenGame.gameEndOverlayKey), isTrue);
       expect(game.lastGameStatus, GameStatus.xWon);
+      expect(
+        game.lastMoveHistory,
+        hasLength(5),
+        reason: 'the full move history is handed off for the end-screen replay',
+      );
 
       game.playAgain();
       game.update(0);
 
       expect(game.overlays.isActive(TitleScreenGame.gameEndOverlayKey), isFalse);
       expect(board.status, GameStatus.inProgress);
+      expect(game.lastMoveHistory, isEmpty);
       expect(
         game.children.whereType<BoardComponent>().length,
         1,

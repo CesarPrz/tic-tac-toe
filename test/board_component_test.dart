@@ -2,6 +2,7 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tic_tac_toe/domain/commands/place_mark_command.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/entities/position.dart';
@@ -12,7 +13,7 @@ Future<BoardComponent> _readyBoard(
   FlameGame<World> game, {
   required bool vsAi,
   Player humanPlayer = Player.x,
-  void Function(GameStatus status)? onGameEnded,
+  void Function(GameStatus status, List<PlaceMarkCommand> moveHistory)? onGameEnded,
 }) async {
   final BoardComponent board = BoardComponent(
     size: Vector2.all(300),
@@ -236,14 +237,18 @@ void main() {
     },
   );
 
-  testWithFlameGame('onGameEnded fires immediately on a draw', (
+  testWithFlameGame('onGameEnded fires after a short delay on a draw', (
     FlameGame<World> game,
   ) async {
     GameStatus? result;
+    List<PlaceMarkCommand>? history;
     final BoardComponent board = await _readyBoard(
       game,
       vsAi: false,
-      onGameEnded: (GameStatus status) => result = status,
+      onGameEnded: (GameStatus status, List<PlaceMarkCommand> moveHistory) {
+        result = status;
+        history = moveHistory;
+      },
     );
 
     // `handleTapAt` always places for whoever's turn it currently is (X, O,
@@ -259,21 +264,28 @@ void main() {
     for (final int index in tapOrder) {
       board.handleTapAt(_cellCenterForTest(Position.fromIndex(index)));
     }
-    // onGameEnded fires from within update(), not synchronously from the tap.
     game.update(0);
 
     expect(board.status, GameStatus.draw);
+    expect(result, isNull, reason: 'not yet — a beat before the dialog appears');
+
+    game.update(BoardComponent.endDialogDelay);
     expect(result, GameStatus.draw);
+    expect(history, hasLength(9), reason: 'every cell was filled for a draw');
   });
 
-  testWithFlameGame('onGameEnded fires only after the win line finishes tracing', (
+  testWithFlameGame('onGameEnded fires only after the win line finishes tracing, plus a short delay', (
     FlameGame<World> game,
   ) async {
     GameStatus? result;
+    List<PlaceMarkCommand>? history;
     final BoardComponent board = await _readyBoard(
       game,
       vsAi: false,
-      onGameEnded: (GameStatus status) => result = status,
+      onGameEnded: (GameStatus status, List<PlaceMarkCommand> moveHistory) {
+        result = status;
+        history = moveHistory;
+      },
     );
 
     board.handleTapAt(Vector2(10, 10)); // X (0,0)
@@ -289,7 +301,15 @@ void main() {
     game.update(0.01);
     game.update(BoardComponent.winLineTraceDuration);
 
+    expect(
+      result,
+      isNull,
+      reason: 'the line just finished tracing — still a beat before the dialog',
+    );
+
+    game.update(BoardComponent.endDialogDelay);
     expect(result, GameStatus.xWon);
+    expect(history, hasLength(5), reason: 'the winning move is the 5th of the round');
   });
 
   testWithFlameGame('resetForNewRound clears the board for a rematch', (
@@ -305,6 +325,8 @@ void main() {
     expect(board.status, GameStatus.xWon);
     game.update(0);
 
+    expect(board.moveHistory, hasLength(5));
+
     board.resetForNewRound();
     game.update(0);
 
@@ -314,10 +336,28 @@ void main() {
       expect(board.markAt(Position.fromIndex(i)), isNull);
     }
     expect(board.children.whereType<MarkComponent>(), isEmpty);
+    expect(board.moveHistory, isEmpty);
 
     // The board should be fully playable again.
     board.handleTapAt(Vector2(10, 10));
     expect(board.markAt(const Position(0, 0)), Player.x);
+  });
+
+  testWithFlameGame('moveHistory records each placed mark in play order', (
+    FlameGame<World> game,
+  ) async {
+    final BoardComponent board = await _readyBoard(game, vsAi: false);
+
+    expect(board.moveHistory, isEmpty);
+
+    board.handleTapAt(Vector2(10, 10)); // X (0,0)
+    board.handleTapAt(Vector2(10, 160)); // O (1,0)
+
+    expect(board.moveHistory, hasLength(2));
+    expect(board.moveHistory[0].position, const Position(0, 0));
+    expect(board.moveHistory[0].player, Player.x);
+    expect(board.moveHistory[1].position, const Position(1, 0));
+    expect(board.moveHistory[1].player, Player.o);
   });
 }
 

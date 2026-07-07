@@ -24,8 +24,9 @@ import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 /// Once a player wins, the three winning [MarkComponent]s play a levitate
 /// and turn animation; only once that finishes does the winning line trace
 /// itself across the board. [onGameEnded] then fires (immediately on a draw,
-/// since there's no line to trace), and the board can be replayed in place
-/// via [resetForNewRound].
+/// since there's no line to trace) with the full [PlaceMarkCommand] history
+/// of the round, and the board can be replayed in place via
+/// [resetForNewRound].
 class BoardComponent extends PositionComponent with TapCallbacks {
   BoardComponent({
     required Vector2 size,
@@ -35,7 +36,12 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     this.onGameEnded,
     AiStrategy? aiStrategy,
   }) : _aiStrategy = aiStrategy ?? HeuristicAiStrategy(),
-       super(size: size, position: position, anchor: Anchor.center);
+       super(size: size, position: position, anchor: Anchor.center) {
+    // Rendered as a separate, higher-priority child so it draws on top of
+    // the mark components rather than underneath them (components render
+    // after their parent's own render() call).
+    add(_WinLineComponent(this));
+  }
 
   /// Whether O is played by [_aiStrategy] rather than a second human tapping
   /// the same board.
@@ -46,8 +52,10 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   final Player humanPlayer;
 
   /// Called once the end-of-game presentation has finished: right away on a
-  /// draw, or after the winning line finishes tracing on a win.
-  final void Function(GameStatus status)? onGameEnded;
+  /// draw, or after the winning line finishes tracing on a win. Includes the
+  /// full move history so the end screen can replay the round.
+  final void Function(GameStatus status, List<PlaceMarkCommand> moveHistory)?
+  onGameEnded;
 
   final AiStrategy _aiStrategy;
   final Random _random = Random();
@@ -57,6 +65,11 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   static const double _aiThinkingDelay = 0.5;
   static const double _winAnimationStagger = 0.15;
   static const double winLineTraceDuration = 0.4;
+
+  /// Extra pause after the round is decided (the win line finishes tracing,
+  /// or immediately on a draw) before the win/lose dialog appears, so the
+  /// result has a moment to register before it's interrupted.
+  static const double endDialogDelay = 0.6;
 
   /// Total time until every grid line has finished drawing.
   static const double totalDrawDuration = _durationPerLine * 4;
@@ -74,10 +87,12 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     ..strokeCap = StrokeCap.round;
 
   final Map<int, MarkComponent> _markComponents = <int, MarkComponent>{};
+  final List<PlaceMarkCommand> _moveHistory = <PlaceMarkCommand>[];
 
   double _elapsed = 0;
   double? _aiMoveAt;
   double _winLineTraceElapsed = 0;
+  double? _endDialogTriggerAt;
   bool _openingMoveScheduled = false;
   bool _endSequenceFired = false;
 
@@ -90,6 +105,10 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   Player get currentPlayer => _currentPlayer;
   GameStatus get status => _status;
   Player? markAt(Position position) => _board.at(position);
+
+  /// Every mark placed so far this round, in the order it was played.
+  List<PlaceMarkCommand> get moveHistory =>
+      List<PlaceMarkCommand>.unmodifiable(_moveHistory);
 
   bool get _animationDone => _elapsed >= totalDrawDuration;
   bool get _isHumanTurn => !vsAi || _currentPlayer == humanPlayer;
@@ -120,21 +139,28 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     if (!_status.isGameOver || _endSequenceFired) return;
 
     if (_status == GameStatus.draw) {
-      _endSequenceFired = true;
-      onGameEnded?.call(_status);
-      return;
-    }
-
-    if (_winningMarksDone) {
+      _scheduleEndDialog();
+    } else if (_winningMarksDone) {
       _winLineTraceElapsed = min(
         _winLineTraceElapsed + dt,
         winLineTraceDuration,
       );
       if (_winLineTraceElapsed >= winLineTraceDuration) {
-        _endSequenceFired = true;
-        onGameEnded?.call(_status);
+        _scheduleEndDialog();
       }
     }
+
+    final double? triggerAt = _endDialogTriggerAt;
+    if (triggerAt != null && _elapsed >= triggerAt) {
+      _endSequenceFired = true;
+      onGameEnded?.call(_status, moveHistory);
+    }
+  }
+
+  /// Only the first call actually schedules anything — later calls (e.g. the
+  /// win line finishing on a subsequent frame) are no-ops.
+  void _scheduleEndDialog() {
+    _endDialogTriggerAt ??= _elapsed + endDialogDelay;
   }
 
   @override
@@ -166,6 +192,7 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     if (!command.canExecute(_board)) return;
 
     _board = command.execute(_board);
+    _moveHistory.add(command);
     _status = _board.status;
     _currentPlayer = _currentPlayer.opponent;
 
@@ -256,11 +283,13 @@ class BoardComponent extends PositionComponent with TapCallbacks {
       mark.removeFromParent();
     }
     _markComponents.clear();
+    _moveHistory.clear();
 
     _board = domain.Board();
     _currentPlayer = Player.x;
     _status = GameStatus.inProgress;
     _winLineTraceElapsed = 0;
+    _endDialogTriggerAt = null;
     _aiMoveAt = null;
     _openingMoveScheduled = false;
     _endSequenceFired = false;
@@ -298,11 +327,7 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   }
 
   @override
-  void render(Canvas canvas) {
-    _renderGrid(canvas);
-    if (!_animationDone) return;
-    _renderWinningLine(canvas);
-  }
+  void render(Canvas canvas) => _renderGrid(canvas);
 
   void _renderGrid(Canvas canvas) {
     final List<(Offset start, Offset end)> lines = _computeGridLines();
@@ -326,4 +351,17 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     final Offset end = _cellCenter(Position.fromIndex(winningLine.last));
     canvas.drawLine(start, Offset.lerp(start, end, progress)!, _winPaint);
   }
+}
+
+/// Draws [BoardComponent]'s winning line on top of the mark components,
+/// rather than underneath them — a component's own `render()` call happens
+/// before its children's, so the line has to live in a (higher-priority)
+/// child of its own to render above the marks.
+class _WinLineComponent extends PositionComponent {
+  _WinLineComponent(this._board) : super(priority: 5);
+
+  final BoardComponent _board;
+
+  @override
+  void render(Canvas canvas) => _board._renderWinningLine(canvas);
 }

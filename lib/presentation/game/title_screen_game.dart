@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tic_tac_toe/domain/commands/place_mark_command.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
 import 'package:tic_tac_toe/domain/entities/player.dart';
@@ -68,6 +69,10 @@ class TitleScreenGame extends FlameGame<World> {
   /// The result of the most recently finished round, read by the
   /// [gameEndOverlayKey] overlay to decide what message to show.
   GameStatus? lastGameStatus;
+
+  /// The full move history of the most recently finished round, read by the
+  /// [gameEndOverlayKey] overlay to show a looping replay of the game.
+  List<PlaceMarkCommand> lastMoveHistory = <PlaceMarkCommand>[];
 
   // Initialized lazily on first access (via `late`'s inline initializer) so
   // that an early `onGameResize` call — which Flame can fire before
@@ -217,8 +222,9 @@ class TitleScreenGame extends FlameGame<World> {
     overlays.add(settingsOverlayKey);
   }
 
-  void _handleGameEnded(GameStatus status) {
+  void _handleGameEnded(GameStatus status, List<PlaceMarkCommand> moveHistory) {
     lastGameStatus = status;
+    lastMoveHistory = moveHistory;
     overlays.add(gameEndOverlayKey);
   }
 
@@ -226,6 +232,7 @@ class TitleScreenGame extends FlameGame<World> {
   void playAgain() {
     overlays.remove(gameEndOverlayKey);
     lastGameStatus = null;
+    lastMoveHistory = <PlaceMarkCommand>[];
     _board?.resetForNewRound();
   }
 
@@ -235,6 +242,7 @@ class TitleScreenGame extends FlameGame<World> {
     overlays.remove(settingsOverlayKey);
     overlays.remove(gameEndOverlayKey);
     lastGameStatus = null;
+    lastMoveHistory = <PlaceMarkCommand>[];
     _board?.removeFromParent();
     _board = null;
     _choosingMark = false;
