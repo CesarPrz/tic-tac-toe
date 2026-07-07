@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:sensors_plus/sensors_plus.dart';
 
-import '../../domain/entities/gravity_direction.dart';
+import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
 
 abstract interface class GravitySensorDataSource {
   Stream<GravityDirection> watchAccelerometerDirection();
