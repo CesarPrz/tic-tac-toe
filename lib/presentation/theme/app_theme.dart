@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'app_colors.dart';
+import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 /// Flutter [ThemeData] for the Material shell (dialogs, snackbars, and any
 /// non-Flame widgets), built from [AppColors] so they match the Flame UI.

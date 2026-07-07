@@ -1,14 +1,15 @@
 import 'dart:ui';
 
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart' show FontWeight, TextPainter, TextSpan, TextStyle;
-
-import '../../theme/app_colors.dart';
-import '../title_screen_game.dart';
+import 'package:flutter/material.dart'
+    show FontWeight, TextPainter, TextSpan, TextStyle;
+import 'package:tic_tac_toe/presentation/game/title_screen_game.dart';
+import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 /// Decorative backdrop of X's and O's endlessly scrolling from top-left to
 /// bottom-right, tiled seamlessly on a grid.
-class ScrollingMarksBackground extends Component with HasGameReference<TitleScreenGame> {
+class ScrollingMarksBackground extends Component
+    with HasGameReference<TitleScreenGame> {
   ScrollingMarksBackground({this.cellSize = 90, this.speed = 40});
 
   final double cellSize;
@@ -20,7 +21,7 @@ class ScrollingMarksBackground extends Component with HasGameReference<TitleScre
   late final TextPainter _oPainter = _buildPainter('O');
 
   TextPainter _buildPainter(String text) {
-    final painter = TextPainter(
+    final TextPainter painter = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
@@ -42,16 +43,19 @@ class ScrollingMarksBackground extends Component with HasGameReference<TitleScre
 
   @override
   void render(Canvas canvas) {
-    final size = game.size;
-    final cols = (size.x / cellSize).ceil() + 2;
-    final rows = (size.y / cellSize).ceil() + 2;
+    final Vector2 size = game.size;
+    final int cols = (size.x / cellSize).ceil() + 2;
+    final int rows = (size.y / cellSize).ceil() + 2;
 
-    for (var row = -1; row < rows; row++) {
-      for (var col = -1; col < cols; col++) {
-        final x = col * cellSize + _offset;
-        final y = row * cellSize + _offset;
-        final painter = (row + col).isEven ? _xPainter : _oPainter;
-        painter.paint(canvas, Offset(x - painter.width / 2, y - painter.height / 2));
+    for (int row = -1; row < rows; row++) {
+      for (int col = -1; col < cols; col++) {
+        final double x = col * cellSize + _offset;
+        final double y = row * cellSize + _offset;
+        final TextPainter painter = (row + col).isEven ? _xPainter : _oPainter;
+        painter.paint(
+          canvas,
+          Offset(x - painter.width / 2, y - painter.height / 2),
+        );
       }
     }
   }

@@ -6,8 +6,9 @@ import 'package:flame_forge2d/flame_forge2d.dart' as forge2d;
 import 'package:flutter/material.dart'
     show FontWeight, TextPainter, TextSpan, TextStyle;
 
-import '../../theme/app_colors.dart';
-import '../title_screen_game.dart';
+import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
+import 'package:tic_tac_toe/presentation/game/title_screen_game.dart';
+import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 class _FallingMark {
   _FallingMark({required this.body, required this.symbol});
@@ -33,18 +34,18 @@ class RainingMarksBackground extends Component
   final double markSize;
   final double pixelsPerMeter;
 
-  static const _gravityMagnitude = 25.0;
-  static const _minRestSeconds = 3.0;
-  static const _maxRestSeconds = 5.0;
+  static const double _gravityMagnitude = 25.0;
+  static const double _minRestSeconds = 3.0;
+  static const double _maxRestSeconds = 5.0;
 
   /// How many screen-heights above the visible area staggered spawns can
   /// start. The top boundary sits just beyond this, so it never interferes
   /// with marks falling in, but still catches everything if gravity ever
   /// points upward (device tilted) instead of down.
-  static const _spawnBufferHeights = 3.0;
+  static const double _spawnBufferHeights = 3.0;
 
   final Random _random = Random();
-  final List<_FallingMark> _marks = [];
+  final List<_FallingMark> _marks = <_FallingMark>[];
 
   late final forge2d.World _world;
   late final TextPainter _xPainter = _buildPainter('X');
@@ -74,7 +75,7 @@ class RainingMarksBackground extends Component
     _initialized = true;
     _world = forge2d.World(_currentGravity);
     _createBounds();
-    for (var i = 0; i < markCount; i++) {
+    for (int i = 0; i < markCount; i++) {
       _spawnMark(staggered: true);
     }
   }
@@ -84,16 +85,16 @@ class RainingMarksBackground extends Component
   // owns the single gravity subscription for the whole game's lifetime; this
   // component just reads whatever direction it last reported.
   Vector2 get _currentGravity {
-    final direction = game.currentGravityDirection;
+    final GravityDirection direction = game.currentGravityDirection;
     return Vector2(direction.dx, direction.dy) * _gravityMagnitude;
   }
 
   // Fully encloses the visible screen plus the buffer zone above it that
   // staggered spawns fall through, so marks can't escape in any direction
   void _createBounds() {
-    final w = _widthMeters;
-    final h = _heightMeters;
-    final top =
+    final double w = _widthMeters;
+    final double h = _heightMeters;
+    final double top =
         -_heightMeters * _spawnBufferHeights - (markSize / pixelsPerMeter);
     _createStaticEdge(Vector2(0, h), Vector2(w, h));
     _createStaticEdge(Vector2(0, top), Vector2(w, top));
@@ -102,23 +103,24 @@ class RainingMarksBackground extends Component
   }
 
   void _createStaticEdge(Vector2 a, Vector2 b) {
-    final body = _world.createBody(
+    final forge2d.Body body = _world.createBody(
       forge2d.BodyDef(type: forge2d.BodyType.static),
     );
-    final shape = forge2d.EdgeShape()..set(a, b);
+    final forge2d.EdgeShape shape = forge2d.EdgeShape()..set(a, b);
     body.createFixtureFromShape(shape, friction: 0);
   }
 
   void _spawnMark({bool staggered = false}) {
-    final halfSize = (markSize / 2) / pixelsPerMeter;
-    final x = halfSize + _random.nextDouble() * (_widthMeters - halfSize * 2);
+    final double halfSize = (markSize / 2) / pixelsPerMeter;
+    final double x =
+        halfSize + _random.nextDouble() * (_widthMeters - halfSize * 2);
     // Staggered initial spawns start at random heights above the screen so
     // the first wave of rain doesn't fall all at once.
-    final y = staggered
+    final double y = staggered
         ? -halfSize - _random.nextDouble() * _heightMeters * _spawnBufferHeights
         : -halfSize * 2;
 
-    final body = _world.createBody(
+    final forge2d.Body body = _world.createBody(
       forge2d.BodyDef(
         type: forge2d.BodyType.dynamic,
         position: Vector2(x, y),
@@ -126,7 +128,8 @@ class RainingMarksBackground extends Component
         angularVelocity: (_random.nextDouble() - 0.5) * 2,
       ),
     );
-    final shape = forge2d.PolygonShape()..setAsBoxXY(halfSize, halfSize);
+    final forge2d.PolygonShape shape = forge2d.PolygonShape()
+      ..setAsBoxXY(halfSize, halfSize);
     body.createFixtureFromShape(
       shape,
       density: 1,
@@ -152,9 +155,9 @@ class RainingMarksBackground extends Component
     _world.gravity = _currentGravity;
     _world.stepDt(dt);
 
-    for (final mark in List.of(_marks)) {
-      final body = mark.body;
-      final isSettled =
+    for (final _FallingMark mark in List<_FallingMark>.of(_marks)) {
+      final forge2d.Body body = mark.body;
+      final bool isSettled =
           body.linearVelocity.length2 < 0.01 &&
           body.angularVelocity.abs() < 0.05;
       mark.restTimer = isSettled ? mark.restTimer + dt : 0;
@@ -169,9 +172,9 @@ class RainingMarksBackground extends Component
   @override
   void render(Canvas canvas) {
     if (!_initialized) return;
-    for (final mark in _marks) {
-      final painter = mark.symbol == 'X' ? _xPainter : _oPainter;
-      final position = mark.body.position * pixelsPerMeter;
+    for (final _FallingMark mark in _marks) {
+      final TextPainter painter = mark.symbol == 'X' ? _xPainter : _oPainter;
+      final Vector2 position = mark.body.position * pixelsPerMeter;
 
       canvas.save();
       canvas.translate(position.x, position.y);

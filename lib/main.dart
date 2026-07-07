@@ -1,24 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import 'presentation/screens/title_screen.dart';
-import 'presentation/theme/app_theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tic_tac_toe/data/datasources/gravity_sensor_data_source.dart';
+import 'package:tic_tac_toe/data/repositories/gravity_repository_impl.dart';
+import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
+import 'package:tic_tac_toe/presentation/screens/title_screen.dart';
+import 'package:tic_tac_toe/presentation/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const TicTacToeApp());
+  await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+    DeviceOrientation.portraitUp,
+  ]);
+  // Composition root: this is the one place allowed to wire a concrete data
+  // layer implementation into a domain use case. Everything downstream only
+  // ever sees `WatchGravity`.
+  final WatchGravity watchGravity = WatchGravity(
+    GravityRepositoryImpl(const GravitySensorDataSourceImpl()),
+  );
+  runApp(
+    ProviderScope(child: TicTacToeApp(watchGravity: watchGravity)),
+  );
 }
 
 class TicTacToeApp extends StatelessWidget {
-  const TicTacToeApp({super.key});
+  const TicTacToeApp({required this.watchGravity, super.key});
+
+  final WatchGravity watchGravity;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Tic Tac Toe',
       theme: AppTheme.themeData,
-      home: const TitleScreen(),
+      home: TitleScreen(watchGravity: watchGravity),
     );
   }
 }

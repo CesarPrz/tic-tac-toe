@@ -37,6 +37,7 @@ dependencies:
   flame: ^1.37.0
   flame_forge2d: ^0.19.2+6
   sensors_plus: ^7.1.0
+  flutter_riverpod: ^3.3.2
 
 dev_dependencies:
   flutter_test:
@@ -48,6 +49,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flame_test: ^2.2.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

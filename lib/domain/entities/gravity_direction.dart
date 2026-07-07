@@ -5,7 +5,7 @@ class GravityDirection {
   const GravityDirection(this.dx, this.dy);
 
   /// Straight down — used when no sensor is available.
-  static const down = GravityDirection(0, 1);
+  static const GravityDirection down = GravityDirection(0, 1);
 
   final double dx;
   final double dy;

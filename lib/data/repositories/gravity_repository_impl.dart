@@ -1,6 +1,6 @@
-import '../../domain/entities/gravity_direction.dart';
-import '../../domain/repositories/gravity_repository.dart';
-import '../datasources/gravity_sensor_data_source.dart';
+import 'package:tic_tac_toe/data/datasources/gravity_sensor_data_source.dart';
+import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
+import 'package:tic_tac_toe/domain/repositories/gravity_repository.dart';
 
 /// Uses the device's accelerometer when it's available and responsive,
 /// falling back to a fixed downward direction otherwise (unsupported
@@ -10,7 +10,7 @@ class GravityRepositoryImpl implements GravityRepository {
 
   final GravitySensorDataSource _dataSource;
 
-  static const _sensorTimeout = Duration(seconds: 2);
+  static const Duration _sensorTimeout = Duration(seconds: 2);
 
   @override
   Stream<GravityDirection> watchGravityDirection() async* {

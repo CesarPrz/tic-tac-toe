@@ -6,7 +6,7 @@ import 'package:flame/events.dart';
 import 'package:flutter/material.dart'
     show Curves, FontWeight, TextPainter, TextSpan, TextStyle;
 
-import '../../theme/app_colors.dart';
+import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 /// A quiet, outlined button with a centered label, optionally preceded by a
 /// play triangle — charcoal fill with a bold mustard border, letting the
@@ -37,18 +37,18 @@ class MenuButtonComponent extends PositionComponent with TapCallbacks {
   final void Function() onPressed;
   final bool showPlayIcon;
 
-  static const _iconSize = 20.0;
-  static const _iconGap = 10.0;
-  static const _radius = Radius.circular(18);
-  static const _borderWidth = 4.0;
+  static const double _iconSize = 20.0;
+  static const double _iconGap = 10.0;
+  static const Radius _radius = Radius.circular(18);
+  static const double _borderWidth = 4.0;
 
   late final TextPainter _labelPainter;
   bool _pressed = false;
 
   @override
   void render(Canvas canvas) {
-    final rect = size.toRect();
-    final rrect = RRect.fromRectAndRadius(rect, _radius);
+    final Rect rect = size.toRect();
+    final RRect rrect = RRect.fromRectAndRadius(rect, _radius);
 
     canvas.drawRRect(
       rrect,
@@ -62,13 +62,13 @@ class MenuButtonComponent extends PositionComponent with TapCallbacks {
         ..strokeWidth = _borderWidth,
     );
 
-    final contentWidth =
+    final double contentWidth =
         (showPlayIcon ? _iconSize + _iconGap : 0) + _labelPainter.width;
-    var x = rect.center.dx - contentWidth / 2;
-    final centerY = rect.center.dy;
+    double x = rect.center.dx - contentWidth / 2;
+    final double centerY = rect.center.dy;
 
     if (showPlayIcon) {
-      final path = Path()
+      final Path path = Path()
         ..moveTo(x, centerY - _iconSize * 0.55)
         ..lineTo(x, centerY + _iconSize * 0.55)
         ..lineTo(x + _iconSize * 0.9, centerY)
