@@ -8,11 +8,18 @@ import 'package:tic_tac_toe/domain/entities/position.dart';
 import 'package:tic_tac_toe/presentation/game/components/board_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/mark_component.dart';
 
-Future<BoardComponent> _readyBoard(FlameGame<World> game, {required bool vsAi}) async {
+Future<BoardComponent> _readyBoard(
+  FlameGame<World> game, {
+  required bool vsAi,
+  Player humanPlayer = Player.x,
+  void Function(GameStatus status)? onGameEnded,
+}) async {
   final BoardComponent board = BoardComponent(
     size: Vector2.all(300),
     position: Vector2.all(150),
     vsAi: vsAi,
+    humanPlayer: humanPlayer,
+    onGameEnded: onGameEnded,
   );
   await game.add(board);
   await game.ready();
@@ -199,5 +206,125 @@ void main() {
       game.update(BoardComponent.winLineTraceDuration);
       expect(board.winLineProgress, 1);
     },
+  );
+
+  testWithFlameGame(
+    'vs AI, playing as O: the AI opens as X automatically',
+    (FlameGame<World> game) async {
+      final BoardComponent board = await _readyBoard(
+        game,
+        vsAi: true,
+        humanPlayer: Player.o,
+      );
+
+      // The AI "thinks" before its opening move, same as any other move.
+      final List<Position> allPositions = <Position>[
+        for (int i = 0; i < 9; i++) Position.fromIndex(i),
+      ];
+      expect(
+        allPositions.where((Position p) => board.markAt(p) == Player.x),
+        isEmpty,
+      );
+
+      game.update(1);
+      expect(
+        allPositions.where((Position p) => board.markAt(p) == Player.x).length,
+        1,
+        reason: 'the AI should have played the opening move as X',
+      );
+      expect(board.currentPlayer, Player.o, reason: "now it's the human's turn");
+    },
+  );
+
+  testWithFlameGame('onGameEnded fires immediately on a draw', (
+    FlameGame<World> game,
+  ) async {
+    GameStatus? result;
+    final BoardComponent board = await _readyBoard(
+      game,
+      vsAi: false,
+      onGameEnded: (GameStatus status) => result = status,
+    );
+
+    // `handleTapAt` always places for whoever's turn it currently is (X, O,
+    // X, O, ...), so the tap order — not index order — has to line up with
+    // this target layout:
+    //   X | O | X
+    //   X | O | O
+    //   O | X | X
+    // Tapping index 0,1,2,4,3,5,7,6,8 assigns X to the odd turns (1,3,5,7,9)
+    // and O to the even turns (2,4,6,8) at exactly the cells above, with no
+    // win completed along the way.
+    const List<int> tapOrder = <int>[0, 1, 2, 4, 3, 5, 7, 6, 8];
+    for (final int index in tapOrder) {
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(index)));
+    }
+    // onGameEnded fires from within update(), not synchronously from the tap.
+    game.update(0);
+
+    expect(board.status, GameStatus.draw);
+    expect(result, GameStatus.draw);
+  });
+
+  testWithFlameGame('onGameEnded fires only after the win line finishes tracing', (
+    FlameGame<World> game,
+  ) async {
+    GameStatus? result;
+    final BoardComponent board = await _readyBoard(
+      game,
+      vsAi: false,
+      onGameEnded: (GameStatus status) => result = status,
+    );
+
+    board.handleTapAt(Vector2(10, 10)); // X (0,0)
+    board.handleTapAt(Vector2(10, 160)); // O (1,0)
+    board.handleTapAt(Vector2(160, 10)); // X (0,1)
+    board.handleTapAt(Vector2(160, 160)); // O (1,1)
+    board.handleTapAt(Vector2(280, 10)); // X (0,2) completes the top row
+    game.update(0);
+
+    expect(result, isNull, reason: 'not yet — the marks are still flipping');
+
+    game.update(MarkComponent.winAnimationDuration + 0.3); // covers the stagger too
+    game.update(0.01);
+    game.update(BoardComponent.winLineTraceDuration);
+
+    expect(result, GameStatus.xWon);
+  });
+
+  testWithFlameGame('resetForNewRound clears the board for a rematch', (
+    FlameGame<World> game,
+  ) async {
+    final BoardComponent board = await _readyBoard(game, vsAi: false);
+
+    board.handleTapAt(Vector2(10, 10)); // X (0,0)
+    board.handleTapAt(Vector2(10, 160)); // O (1,0)
+    board.handleTapAt(Vector2(160, 10)); // X (0,1)
+    board.handleTapAt(Vector2(160, 160)); // O (1,1)
+    board.handleTapAt(Vector2(280, 10)); // X (0,2) completes the top row
+    expect(board.status, GameStatus.xWon);
+    game.update(0);
+
+    board.resetForNewRound();
+    game.update(0);
+
+    expect(board.status, GameStatus.inProgress);
+    expect(board.currentPlayer, Player.x);
+    for (int i = 0; i < 9; i++) {
+      expect(board.markAt(Position.fromIndex(i)), isNull);
+    }
+    expect(board.children.whereType<MarkComponent>(), isEmpty);
+
+    // The board should be fully playable again.
+    board.handleTapAt(Vector2(10, 10));
+    expect(board.markAt(const Position(0, 0)), Player.x);
+  });
+}
+
+Vector2 _cellCenterForTest(Position position) {
+  const double cellSize = 100;
+  return Vector2(
+    (position.col + 0.5) * cellSize,
+    (position.row + 0.5) * cellSize,
   );
 }

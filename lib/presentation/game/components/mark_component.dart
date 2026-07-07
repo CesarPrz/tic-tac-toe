@@ -40,16 +40,22 @@ class MarkComponent extends PositionComponent {
     ..strokeCap = StrokeCap.round;
 
   bool _winAnimating = false;
+  // While waiting out a stagger delay this sits at or below 0; the visible
+  // lift/turn only starts once it crosses into positive territory, and its
+  // own progress (0 to winAnimationDuration) is unaffected by how long the
+  // wait was.
   double _winElapsed = 0;
 
   bool get isWinAnimationDone =>
       !_winAnimating || _winElapsed >= winAnimationDuration;
 
-  /// Starts the "levitate, turn, fall back" animation. Called on marks that
-  /// are part of the winning line once the game ends.
-  void playWinAnimation() {
+  /// Starts the "levitate, turn, fall back" animation, optionally waiting
+  /// [delay] seconds first — used to stagger the winning marks so they don't
+  /// all flip in lockstep. Called on marks that are part of the winning line
+  /// once the game ends.
+  void playWinAnimation({double delay = 0}) {
     _winAnimating = true;
-    _winElapsed = 0;
+    _winElapsed = -delay;
   }
 
   @override
@@ -58,6 +64,8 @@ class MarkComponent extends PositionComponent {
     if (!_winAnimating || _winElapsed >= winAnimationDuration) return;
 
     _winElapsed = min(_winElapsed + dt, winAnimationDuration);
+    if (_winElapsed <= 0) return; // still waiting out the stagger delay
+
     final double t = _winElapsed / winAnimationDuration;
 
     // One sine hump over the duration: rises then settles back to place.

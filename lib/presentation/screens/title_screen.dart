@@ -2,6 +2,8 @@ import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:tic_tac_toe/domain/entities/game_status.dart';
+import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
 import 'package:tic_tac_toe/presentation/game/title_screen_game.dart';
 import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
@@ -32,6 +34,9 @@ class _TitleScreenState extends State<TitleScreen> {
               TitleScreenGame.settingsOverlayKey:
                   (BuildContext context, TitleScreenGame game) =>
                       _SettingsCogButton(game: game),
+              TitleScreenGame.gameEndOverlayKey:
+                  (BuildContext context, TitleScreenGame game) =>
+                      _GameEndOverlay(game: game),
             },
           ),
           if (kDebugMode) _DevControls(game: _game),
@@ -178,7 +183,154 @@ class _SettingsCogButton extends StatelessWidget {
   }
 }
 
-/// A dialog styled to match the game's mustard/charcoal theme, with a title
+/// Shown once a round ends (see [TitleScreenGame.gameEndOverlayKey]): the
+/// winning mark drawn large on a teal block, the result, and a "Play again"
+/// link — styled after a dark-chrome card with a colored insert.
+class _GameEndOverlay extends StatelessWidget {
+  const _GameEndOverlay({required this.game});
+
+  final TitleScreenGame game;
+
+  @override
+  Widget build(BuildContext context) {
+    final GameStatus? status = game.lastGameStatus;
+    final Player? winner = switch (status) {
+      GameStatus.xWon => Player.x,
+      GameStatus.oWon => Player.o,
+      GameStatus.draw || GameStatus.inProgress || null => null,
+    };
+    final String resultText = switch (status) {
+      GameStatus.xWon => 'X WON!',
+      GameStatus.oWon => 'O WON!',
+      GameStatus.draw => 'DRAW!',
+      GameStatus.inProgress || null => '',
+    };
+
+    return Positioned.fill(
+      child: Stack(
+        children: <Widget>[
+          // Blocks input to the board/cog underneath while this is showing.
+          ModalBarrier(color: Colors.black.withValues(alpha: 0.6)),
+          Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 40),
+              decoration: BoxDecoration(
+                color: AppColors.overlayChrome,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: Text(
+                      'Game over',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    color: AppColors.panel,
+                    padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 40),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (winner != null) ...<Widget>[
+                          _ResultMark(player: winner),
+                          const SizedBox(height: 16),
+                        ],
+                        Text(
+                          resultText,
+                          style: const TextStyle(
+                            color: AppColors.accent,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: game.playAgain,
+                    child: const Text(
+                      'Play again',
+                      style: TextStyle(
+                        color: AppColors.canvasBackground,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A large drawn X or O, styled like the marks on the board itself, shown
+/// atop the win overlay's teal insert.
+class _ResultMark extends StatelessWidget {
+  const _ResultMark({required this.player});
+
+  final Player player;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 84,
+      height: 84,
+      child: CustomPaint(painter: _ResultMarkPainter(player: player)),
+    );
+  }
+}
+
+class _ResultMarkPainter extends CustomPainter {
+  _ResultMarkPainter({required this.player});
+
+  final Player player;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = AppColors.overlayMark
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 12
+      ..strokeCap = StrokeCap.round;
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    final double inset = size.width * 0.32;
+
+    if (player == Player.x) {
+      canvas.drawLine(
+        center.translate(-inset, -inset),
+        center.translate(inset, inset),
+        paint,
+      );
+      canvas.drawLine(
+        center.translate(inset, -inset),
+        center.translate(-inset, inset),
+        paint,
+      );
+    } else {
+      canvas.drawCircle(center, inset, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ResultMarkPainter oldDelegate) =>
+      oldDelegate.player != player;
+}
+
+/// A dialog styled to match the game's bright teal/coral theme, with a title
 /// and a row of [buttons] below it.
 class _ThemedDialog extends StatelessWidget {
   const _ThemedDialog({required this.title, required this.buttons});
@@ -189,7 +341,7 @@ class _ThemedDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      backgroundColor: AppColors.surface,
+      backgroundColor: AppColors.panel,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
         side: const BorderSide(color: AppColors.accent, width: 3),
@@ -203,7 +355,7 @@ class _ThemedDialog extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: AppColors.accent,
+                color: AppColors.textLight,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -228,8 +380,8 @@ class _DialogButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.accent,
-        side: const BorderSide(color: AppColors.accent, width: 2),
+        foregroundColor: AppColors.textLight,
+        side: const BorderSide(color: AppColors.textLight, width: 2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       child: Text(label),

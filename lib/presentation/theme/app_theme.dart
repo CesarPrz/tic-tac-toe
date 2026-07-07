@@ -7,15 +7,15 @@ import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 abstract final class AppTheme {
   static ThemeData get themeData => ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
+        brightness: Brightness.light,
         scaffoldBackgroundColor: AppColors.canvasBackground,
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.accent,
-          brightness: Brightness.dark,
+          brightness: Brightness.light,
         ),
         snackBarTheme: const SnackBarThemeData(
-          backgroundColor: AppColors.surface,
-          contentTextStyle: TextStyle(color: AppColors.accent),
+          backgroundColor: AppColors.panel,
+          contentTextStyle: TextStyle(color: AppColors.textLight),
           actionTextColor: AppColors.accent,
         ),
       );

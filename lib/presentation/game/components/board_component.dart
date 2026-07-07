@@ -17,17 +17,22 @@ import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 /// A playable 3x3 tic-tac-toe board. The grid draws itself on when the
 /// component first appears; once that finishes, taps place the human
-/// player's mark (always X). Against the AI (O), its move follows after a
-/// short "thinking" delay.
+/// player's mark ([humanPlayer]). Against the AI, its move follows after a
+/// short "thinking" delay — including the opening move, if the AI is playing
+/// X.
 ///
 /// Once a player wins, the three winning [MarkComponent]s play a levitate
 /// and turn animation; only once that finishes does the winning line trace
-/// itself across the board.
+/// itself across the board. [onGameEnded] then fires (immediately on a draw,
+/// since there's no line to trace), and the board can be replayed in place
+/// via [resetForNewRound].
 class BoardComponent extends PositionComponent with TapCallbacks {
   BoardComponent({
     required Vector2 size,
     required Vector2 position,
     required this.vsAi,
+    this.humanPlayer = Player.x,
+    this.onGameEnded,
     AiStrategy? aiStrategy,
   }) : _aiStrategy = aiStrategy ?? HeuristicAiStrategy(),
        super(size: size, position: position, anchor: Anchor.center);
@@ -35,12 +40,22 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   /// Whether O is played by [_aiStrategy] rather than a second human tapping
   /// the same board.
   final bool vsAi;
+
+  /// Which mark the human plays as (irrelevant when [vsAi] is false — X
+  /// always starts, and both players are human either way).
+  final Player humanPlayer;
+
+  /// Called once the end-of-game presentation has finished: right away on a
+  /// draw, or after the winning line finishes tracing on a win.
+  final void Function(GameStatus status)? onGameEnded;
+
   final AiStrategy _aiStrategy;
   final Random _random = Random();
 
   static const int _gridLines = 3;
   static const double _durationPerLine = 0.3;
   static const double _aiThinkingDelay = 0.5;
+  static const double _winAnimationStagger = 0.15;
   static const double winLineTraceDuration = 0.4;
 
   /// Total time until every grid line has finished drawing.
@@ -63,6 +78,8 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   double _elapsed = 0;
   double? _aiMoveAt;
   double _winLineTraceElapsed = 0;
+  bool _openingMoveScheduled = false;
+  bool _endSequenceFired = false;
 
   domain.Board _board = domain.Board();
   Player _currentPlayer = Player.x;
@@ -75,12 +92,20 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   Player? markAt(Position position) => _board.at(position);
 
   bool get _animationDone => _elapsed >= totalDrawDuration;
-  bool get _isHumanTurn => !vsAi || _currentPlayer == Player.x;
+  bool get _isHumanTurn => !vsAi || _currentPlayer == humanPlayer;
 
   @override
   void update(double dt) {
     super.update(dt);
     _elapsed += dt;
+
+    if (_animationDone && !_openingMoveScheduled) {
+      _openingMoveScheduled = true;
+      // If the AI is playing X, it has to make the opening move itself.
+      if (!_status.isGameOver && vsAi && humanPlayer != Player.x) {
+        _aiMoveAt = _elapsed + _aiThinkingDelay;
+      }
+    }
 
     final double? scheduledAt = _aiMoveAt;
     if (scheduledAt != null && _elapsed >= scheduledAt) {
@@ -88,11 +113,27 @@ class BoardComponent extends PositionComponent with TapCallbacks {
       _makeAiMove();
     }
 
-    if (_status.isGameOver && _winningMarksDone) {
+    _updateEndSequence(dt);
+  }
+
+  void _updateEndSequence(double dt) {
+    if (!_status.isGameOver || _endSequenceFired) return;
+
+    if (_status == GameStatus.draw) {
+      _endSequenceFired = true;
+      onGameEnded?.call(_status);
+      return;
+    }
+
+    if (_winningMarksDone) {
       _winLineTraceElapsed = min(
         _winLineTraceElapsed + dt,
         winLineTraceDuration,
       );
+      if (_winLineTraceElapsed >= winLineTraceDuration) {
+        _endSequenceFired = true;
+        onGameEnded?.call(_status);
+      }
     }
   }
 
@@ -134,15 +175,16 @@ class BoardComponent extends PositionComponent with TapCallbacks {
 
     if (_status == GameStatus.xWon || _status == GameStatus.oWon) {
       _startWinSequence();
-    } else if (!_status.isGameOver && vsAi && _currentPlayer == Player.o) {
+    } else if (!_status.isGameOver && vsAi && _currentPlayer == humanPlayer.opponent) {
       _aiMoveAt = _elapsed + _aiThinkingDelay;
     }
   }
 
   void _makeAiMove() {
     if (_status.isGameOver) return;
-    final Position move = _aiStrategy.chooseMove(_board, Player.o);
-    _tryPlaceMark(move, Player.o);
+    final Player aiPlayer = humanPlayer.opponent;
+    final Position move = _aiStrategy.chooseMove(_board, aiPlayer);
+    _tryPlaceMark(move, aiPlayer);
   }
 
   Offset _cellCenter(Position position) {
@@ -191,8 +233,10 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   void _startWinSequence() {
     final List<int>? winningLine = _board.winningLine;
     if (winningLine == null) return;
-    for (final int index in winningLine) {
-      _markComponents[index]?.playWinAnimation();
+    for (int i = 0; i < winningLine.length; i++) {
+      _markComponents[winningLine[i]]?.playWinAnimation(
+        delay: i * _winAnimationStagger,
+      );
     }
   }
 
@@ -202,6 +246,24 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     return winningLine.every(
       (int index) => _markComponents[index]?.isWinAnimationDone ?? true,
     );
+  }
+
+  /// Clears the board and game state for a rematch, keeping the same
+  /// [vsAi]/[humanPlayer] settings and without replaying the grid's
+  /// draw-in animation (it's already fully drawn).
+  void resetForNewRound() {
+    for (final MarkComponent mark in _markComponents.values) {
+      mark.removeFromParent();
+    }
+    _markComponents.clear();
+
+    _board = domain.Board();
+    _currentPlayer = Player.x;
+    _status = GameStatus.inProgress;
+    _winLineTraceElapsed = 0;
+    _aiMoveAt = null;
+    _openingMoveScheduled = false;
+    _endSequenceFired = false;
   }
 
   /// How far along (0 to 1, eased) the line at [index] is in drawing itself
