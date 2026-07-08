@@ -14,13 +14,14 @@ import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
 import 'package:tic_tac_toe/presentation/game/components/board_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/circle_wipe_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/game_mode_selector_component.dart';
-import 'package:tic_tac_toe/presentation/game/components/mark_selector_component.dart';
+import 'package:tic_tac_toe/presentation/game/components/mark_picker_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/menu_button_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/opponent_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/outlined_text_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/panel_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/raining_marks_background.dart';
 import 'package:tic_tac_toe/presentation/game/components/scrolling_marks_background.dart';
+import 'package:tic_tac_toe/presentation/providers/audio_settings_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/game_mode_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/opponent_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/player_mark_provider.dart';
@@ -32,8 +33,9 @@ class TitleScreenGame extends FlameGame<World> {
   final WatchGravity watchGravity;
   final ProviderContainer container;
 
-  /// Key for the settings-cog [GameWidget] overlay, shown only once the
-  /// board is on screen. See [TitleScreen]'s `overlayBuilderMap`.
+  /// Key for the settings-cog [GameWidget] overlay, visible throughout —
+  /// title screen and gameplay alike. See [TitleScreen]'s
+  /// `overlayBuilderMap`.
   static const String settingsOverlayKey = 'settings';
 
   /// Key for the win/draw [GameWidget] overlay. See [TitleScreen]'s
@@ -42,10 +44,15 @@ class TitleScreenGame extends FlameGame<World> {
 
   static final Vector2 _buttonSize = Vector2(260, 60);
   static final Vector2 _selectorSize = Vector2(260, 96);
-  static final Vector2 _markSelectorSize = Vector2(260, 76);
   static const double _buttonGap = 24.0;
   static const double _selectorGap = 16.0;
   static const double _panelPadding = 28.0;
+
+  /// Fraction of the shorter screen dimension used for each mark picker's
+  /// diameter, and where its center sits along the screen's width.
+  static const double _markPickerSizeFraction = 0.34;
+  static const double _markPickerXFraction = 0.25;
+  static const double _markPickerOFraction = 0.75;
 
   // Picked once per app run (lazy static initializer) so every visit to the
   // title screen during this session shows the same background animation,
@@ -64,7 +71,6 @@ class TitleScreenGame extends FlameGame<World> {
   // background component — is disposed.
   StreamSubscription<GravityDirection>? _gravitySubscription;
   ProviderSubscription<Opponent>? _opponentSubscription;
-  ProviderSubscription<Player>? _playerMarkSubscription;
   ProviderSubscription<GameMode>? _gameModeSubscription;
 
   /// The most recent direction "down" points toward, read by
@@ -112,11 +118,18 @@ class TitleScreenGame extends FlameGame<World> {
         onToggle: () => container.read(gameModeProvider.notifier).toggle(),
       );
 
-  late final MarkSelectorComponent _markSelector = MarkSelectorComponent(
-    size: _markSelectorSize,
+  late final MarkPickerComponent _markPickerX = MarkPickerComponent(
+    mark: Player.x,
+    size: Vector2.zero(),
     position: Vector2.zero(),
-    initialMark: container.read(playerMarkProvider),
-    onToggle: () => container.read(playerMarkProvider.notifier).toggle(),
+    onSelected: () => _onMarkPicked(Player.x),
+  );
+
+  late final MarkPickerComponent _markPickerO = MarkPickerComponent(
+    mark: Player.o,
+    size: Vector2.zero(),
+    position: Vector2.zero(),
+    onSelected: () => _onMarkPicked(Player.o),
   );
 
   late final MenuButtonComponent _playButton = MenuButtonComponent(
@@ -127,10 +140,14 @@ class TitleScreenGame extends FlameGame<World> {
     onPressed: _onPlayPressed,
   );
 
-  /// Whether the mark (X/O) selector is currently swapped in for the
-  /// opponent selector, on the way to actually starting the game. Only
-  /// reachable when playing vs AI — hotseat mode has no use for it.
+  /// Whether the mark pickers are currently swapped in for the opponent and
+  /// game mode selectors, on the way to actually starting the game. Only
+  /// reachable when playing vs AI — hotseat mode has no use for them.
   bool _choosingMark = false;
+
+  /// Whether a round is underway — read by the settings menu to decide
+  /// whether to offer a "Quit game" button.
+  bool get isPlaying => _board != null;
 
   @override
   Color backgroundColor() => AppColors.canvasBackground;
@@ -143,10 +160,6 @@ class TitleScreenGame extends FlameGame<World> {
     _opponentSubscription = container.listen<Opponent>(
       opponentProvider,
       (Opponent? previous, Opponent next) => _opponentSelector.updateSelected(next),
-    );
-    _playerMarkSubscription = container.listen<Player>(
-      playerMarkProvider,
-      (Player? previous, Player next) => _markSelector.updateSelected(next),
     );
     _gameModeSubscription = container.listen<GameMode>(
       gameModeProvider,
@@ -168,7 +181,6 @@ class TitleScreenGame extends FlameGame<World> {
   void onDispose() {
     _gravitySubscription?.cancel();
     _opponentSubscription?.close();
-    _playerMarkSubscription?.close();
     _gameModeSubscription?.close();
     super.onDispose();
   }
@@ -196,12 +208,13 @@ class TitleScreenGame extends FlameGame<World> {
     add(_background!);
   }
 
-  /// Handles the Play button: vs AI, the first press swaps the opponent
-  /// selector out for the mark (X/O) selector instead of starting the game
-  /// right away; the second press actually starts the transition. Hotseat
-  /// mode has no use for a mark selector, so it transitions immediately.
+  /// Handles the Play button: vs AI, it swaps the opponent/game mode
+  /// selectors and the button itself out for the two mark pickers instead of
+  /// starting the game right away — tapping one of those starts the
+  /// transition directly. Hotseat mode has no use for picking a mark, so it
+  /// transitions immediately.
   void _onPlayPressed() {
-    if (!_choosingMark && container.read(opponentProvider) == Opponent.robot) {
+    if (container.read(opponentProvider) == Opponent.robot) {
       _beginMarkSelection();
       return;
     }
@@ -212,8 +225,17 @@ class TitleScreenGame extends FlameGame<World> {
     _choosingMark = true;
     _opponentSelector.removeFromParent();
     _gameModeSelector.removeFromParent();
-    add(_markSelector);
+    _playButton.removeFromParent();
+    _panel.removeFromParent();
+    addAll(<Component>[_markPickerX, _markPickerO]);
     _layout();
+  }
+
+  /// Called when a mark picker is tapped: locks in that choice and starts
+  /// the game right away.
+  void _onMarkPicked(Player mark) {
+    container.read(playerMarkProvider.notifier).select(mark);
+    _startTransition();
   }
 
   /// Wipes the title screen away with a growing circle, revealing the game
@@ -235,7 +257,8 @@ class TitleScreenGame extends FlameGame<World> {
     _title.removeFromParent();
     _opponentSelector.removeFromParent();
     _gameModeSelector.removeFromParent();
-    _markSelector.removeFromParent();
+    _markPickerX.removeFromParent();
+    _markPickerO.removeFromParent();
     _playButton.removeFromParent();
 
     _board = BoardComponent(
@@ -244,10 +267,10 @@ class TitleScreenGame extends FlameGame<World> {
       vsAi: container.read(opponentProvider) == Opponent.robot,
       humanPlayer: container.read(playerMarkProvider),
       gameMode: container.read(gameModeProvider),
+      getVolume: () => container.read(audioSettingsProvider).effectiveVolume,
       onGameEnded: _handleGameEnded,
     );
     add(_board!);
-    overlays.add(settingsOverlayKey);
   }
 
   void _handleGameEnded(GameStatus status, List<PlaceMarkCommand> moveHistory) {
@@ -264,10 +287,10 @@ class TitleScreenGame extends FlameGame<World> {
     _board?.resetForNewRound();
   }
 
-  /// Called after the player confirms "Stop playing" — tears down the board
-  /// and brings back the title screen.
+  /// Called from the settings menu's "Quit game" button — tears down the
+  /// board and brings back the title screen. The settings cog itself stays
+  /// up throughout, so there's nothing to re-add for it here.
   void returnToTitle() {
-    overlays.remove(settingsOverlayKey);
     overlays.remove(gameEndOverlayKey);
     lastGameStatus = null;
     lastMoveHistory = <PlaceMarkCommand>[];
@@ -295,35 +318,60 @@ class TitleScreenGame extends FlameGame<World> {
     _layout();
   }
 
-  /// The selector(s) shown above the Play button for the current step: both
-  /// the opponent and game mode selectors on the initial screen, or just the
-  /// mark selector once [_choosingMark].
-  List<PositionComponent> get _activeSelectors => _choosingMark
-      ? <PositionComponent>[_markSelector]
-      : <PositionComponent>[_opponentSelector, _gameModeSelector];
-
   void _layout() {
     final Vector2 center = size / 2;
-    _title.position = Vector2(center.x, center.y - 130);
+    _title.position = Vector2(center.x, center.y - 170);
 
-    final List<PositionComponent> activeSelectors = _activeSelectors;
+    if (_choosingMark) {
+      _layoutMarkPickers(center);
+    } else {
+      _layoutOpeningSelectors(center);
+    }
+
+    if (_board != null) {
+      _board!
+        ..position = center
+        ..size = _boardSize;
+    }
+  }
+
+  /// Two big tappable marks, one on either side of the screen — replaces the
+  /// panel/button entirely while [_choosingMark].
+  void _layoutMarkPickers(Vector2 center) {
+    final double pickerSize = min(size.x, size.y) * _markPickerSizeFraction;
+    _markPickerX
+      ..size = Vector2.all(pickerSize)
+      ..position = Vector2(size.x * _markPickerXFraction, center.y);
+    _markPickerO
+      ..size = Vector2.all(pickerSize)
+      ..position = Vector2(size.x * _markPickerOFraction, center.y);
+  }
+
+  /// The opponent and game mode selectors stacked above the Play button,
+  /// wrapped in the panel — the initial title screen layout.
+  void _layoutOpeningSelectors(Vector2 center) {
+    final List<PositionComponent> selectors = <PositionComponent>[
+      _opponentSelector,
+      _gameModeSelector,
+    ];
+
     double cursorY = center.y + 10;
     double maxSelectorWidth = 0;
-    for (int i = 0; i < activeSelectors.length; i++) {
-      final PositionComponent selector = activeSelectors[i];
+    for (int i = 0; i < selectors.length; i++) {
+      final PositionComponent selector = selectors[i];
       if (i > 0) {
         cursorY +=
-            activeSelectors[i - 1].size.y / 2 + _selectorGap + selector.size.y / 2;
+            selectors[i - 1].size.y / 2 + _selectorGap + selector.size.y / 2;
       }
       selector.position = Vector2(center.x, cursorY);
       maxSelectorWidth = max(maxSelectorWidth, selector.size.x);
     }
 
     final double buttonY =
-        cursorY + activeSelectors.last.size.y / 2 + _buttonGap + _buttonSize.y / 2;
+        cursorY + selectors.last.size.y / 2 + _buttonGap + _buttonSize.y / 2;
     _playButton.position = Vector2(center.x, buttonY);
 
-    final double panelTop = (center.y + 10) - activeSelectors.first.size.y / 2;
+    final double panelTop = (center.y + 10) - selectors.first.size.y / 2;
     final double panelBottom = buttonY + _buttonSize.y / 2;
     _panel
       ..position = Vector2(center.x, (panelTop + panelBottom) / 2)
@@ -331,11 +379,5 @@ class TitleScreenGame extends FlameGame<World> {
         max(maxSelectorWidth, _buttonSize.x) + _panelPadding * 2,
         (panelBottom - panelTop) + _panelPadding * 2,
       );
-
-    if (_board != null) {
-      _board!
-        ..position = center
-        ..size = _boardSize;
-    }
   }
 }

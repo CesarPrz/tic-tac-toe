@@ -15,6 +15,7 @@ Future<BoardComponent> _readyBoard(
   required bool vsAi,
   Player humanPlayer = Player.x,
   GameMode gameMode = GameMode.classic,
+  double Function()? getVolume,
   void Function(GameStatus status, List<PlaceMarkCommand> moveHistory)? onGameEnded,
 }) async {
   final BoardComponent board = BoardComponent(
@@ -23,6 +24,7 @@ Future<BoardComponent> _readyBoard(
     vsAi: vsAi,
     humanPlayer: humanPlayer,
     gameMode: gameMode,
+    getVolume: getVolume,
     onGameEnded: onGameEnded,
   );
   await game.add(board);
@@ -33,6 +35,12 @@ Future<BoardComponent> _readyBoard(
 }
 
 void main() {
+  // Placing a mark plays a sound via flame_audio, which touches platform
+  // channels — required even though no real audio backend is registered in
+  // this test environment, so playback fails safely instead of erroring on
+  // an uninitialized binding.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   testWithFlameGame('grid lines draw in, one after another', (
     FlameGame<World> game,
   ) async {
@@ -172,6 +180,23 @@ void main() {
     game.update(0);
 
     expect(board.children.whereType<ParticleSystemComponent>().length, 1);
+  });
+
+  testWithFlameGame('placing a mark with volume muted skips playback entirely', (
+    FlameGame<World> game,
+  ) async {
+    // A muted `getVolume` should short-circuit before ever touching the
+    // audio backend, so this should complete the same as any other tap.
+    final BoardComponent board = await _readyBoard(
+      game,
+      vsAi: false,
+      getVolume: () => 0,
+    );
+
+    board.handleTapAt(Vector2(10, 10));
+    game.update(0);
+
+    expect(board.markAt(const Position(0, 0)), Player.x);
   });
 
   testWithFlameGame(

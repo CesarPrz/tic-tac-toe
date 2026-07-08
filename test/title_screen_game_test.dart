@@ -6,18 +6,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tic_tac_toe/domain/entities/game_mode.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
+import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/repositories/gravity_repository.dart';
 import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
 import 'package:tic_tac_toe/presentation/game/components/board_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/circle_wipe_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/game_mode_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/mark_component.dart';
-import 'package:tic_tac_toe/presentation/game/components/mark_selector_component.dart';
+import 'package:tic_tac_toe/presentation/game/components/mark_picker_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/menu_button_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/opponent_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/title_screen_game.dart';
 import 'package:tic_tac_toe/presentation/providers/game_mode_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/opponent_provider.dart';
+import 'package:tic_tac_toe/presentation/providers/player_mark_provider.dart';
 
 class _FakeGravityRepository implements GravityRepository {
   @override
@@ -30,18 +32,25 @@ TitleScreenGame _newGame() => TitleScreenGame(
 );
 
 void main() {
+  // Placing a mark plays a sound via flame_audio, which touches platform
+  // channels — required even though no real audio backend is registered in
+  // this test environment, so playback fails safely instead of erroring on
+  // an uninitialized binding.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   testWithGame<TitleScreenGame>(
     'pressing Play wipes the title screen away and shows the board',
     _newGame,
     (TitleScreenGame game) async {
       await game.ready();
-      // `GameWidget`'s `overlayBuilderMap` is what registers this in
-      // production; there's no `GameWidget` in this test, so register a
-      // stand-in builder directly.
+      // `GameWidget`'s `overlayBuilderMap`/`initialActiveOverlays` are what
+      // register and activate this in production; there's no `GameWidget`
+      // in this test, so do both by hand.
       game.overlays.addEntry(
         TitleScreenGame.settingsOverlayKey,
         (BuildContext context, Game game) => const SizedBox.shrink(),
       );
+      game.overlays.add(TitleScreenGame.settingsOverlayKey);
       // Hotseat mode, so Play transitions immediately rather than first
       // showing the mark selector.
       game.container.read(opponentProvider.notifier).toggle();
@@ -84,7 +93,7 @@ void main() {
       expect(
         game.overlays.isActive(TitleScreenGame.settingsOverlayKey),
         isTrue,
-        reason: 'the settings cog should appear once the board is shown',
+        reason: 'the settings cog stays up throughout',
       );
 
       game.returnToTitle();
@@ -92,7 +101,8 @@ void main() {
 
       expect(
         game.overlays.isActive(TitleScreenGame.settingsOverlayKey),
-        isFalse,
+        isTrue,
+        reason: 'the settings cog is visible on the main menu too',
       );
       expect(game.children.whereType<BoardComponent>(), isEmpty);
       expect(game.children.whereType<OpponentSelectorComponent>().length, 1);
@@ -132,14 +142,45 @@ void main() {
   );
 
   testWithGame<TitleScreenGame>(
-    'pressing Play vs AI shows the mark selector instead of transitioning',
+    'isPlaying reflects whether a round is underway',
+    _newGame,
+    (TitleScreenGame game) async {
+      await game.ready();
+      game.overlays.addEntry(
+        TitleScreenGame.settingsOverlayKey,
+        (BuildContext context, Game game) => const SizedBox.shrink(),
+      );
+      expect(game.isPlaying, isFalse);
+
+      game.container.read(opponentProvider.notifier).toggle(); // -> human
+      game.update(0);
+      final MenuButtonComponent playButton = game.children
+          .whereType<MenuButtonComponent>()
+          .firstWhere((MenuButtonComponent button) => button.label == 'Play');
+      playButton.onPressed();
+      game.update(0.7);
+      game.update(0);
+
+      expect(game.isPlaying, isTrue);
+
+      game.returnToTitle();
+      game.update(0);
+
+      expect(game.isPlaying, isFalse);
+
+      game.container.dispose();
+    },
+  );
+
+  testWithGame<TitleScreenGame>(
+    'pressing Play vs AI shows the mark pickers instead of transitioning',
     _newGame,
     (TitleScreenGame game) async {
       await game.ready();
 
       // The opponent provider defaults to Opponent.robot, but the mark
-      // selector shouldn't show until Play is pressed.
-      expect(game.children.whereType<MarkSelectorComponent>(), isEmpty);
+      // pickers shouldn't show until Play is pressed.
+      expect(game.children.whereType<MarkPickerComponent>(), isEmpty);
       expect(game.children.whereType<OpponentSelectorComponent>().length, 1);
 
       final MenuButtonComponent playButton = game.children
@@ -151,24 +192,29 @@ void main() {
       expect(
         game.children.whereType<OpponentSelectorComponent>(),
         isEmpty,
-        reason: 'the opponent selector is swapped out for the mark selector',
+        reason: 'the opponent selector is swapped out for the mark pickers',
       );
       expect(
         game.children.whereType<GameModeSelectorComponent>(),
         isEmpty,
         reason: 'the game mode selector is swapped out too',
       );
-      expect(game.children.whereType<MarkSelectorComponent>().length, 1);
+      expect(game.children.whereType<MarkPickerComponent>(), hasLength(2));
       expect(
         game.children.whereType<CircleWipeComponent>(),
         isEmpty,
         reason: 'still choosing a mark — the game should not have started yet',
       );
 
-      // Pressing Play again actually starts the transition.
-      playButton.onPressed();
+      // Tapping a mark picker directly starts the transition.
+      final MarkPickerComponent oPicker = game.children
+          .whereType<MarkPickerComponent>()
+          .firstWhere((MarkPickerComponent picker) => picker.mark == Player.o);
+      oPicker.onSelected();
       game.update(0);
+
       expect(game.children.whereType<CircleWipeComponent>().length, 1);
+      expect(game.container.read(playerMarkProvider), Player.o);
 
       game.container.dispose();
     },
@@ -188,7 +234,7 @@ void main() {
       playButton.onPressed();
       game.update(0);
 
-      expect(game.children.whereType<MarkSelectorComponent>(), isEmpty);
+      expect(game.children.whereType<MarkPickerComponent>(), isEmpty);
       expect(game.children.whereType<CircleWipeComponent>().length, 1);
 
       game.container.dispose();

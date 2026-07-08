@@ -10,5 +10,5 @@ class PlayerMarkController extends Notifier<Player> {
   @override
   Player build() => Player.x;
 
-  void toggle() => state = state.opponent;
+  void select(Player mark) => state = mark;
 }

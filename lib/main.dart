@@ -1,3 +1,4 @@
+import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,11 @@ void main() async {
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,
   ]);
+  // The mark-placement sounds live under assets/sounds/ rather than
+  // flame_audio's default assets/audio/ prefix, and are short/frequent
+  // enough to preload up front instead of decoding on first play.
+  FlameAudio.audioCache.prefix = 'assets/sounds/';
+  await FlameAudio.audioCache.loadAll(<String>['place_x.ogg', 'place_o.ogg']);
   // Composition root: this is the one place allowed to wire a concrete data
   // layer implementation into a domain use case. Everything downstream only
   // ever sees `WatchGravity`.

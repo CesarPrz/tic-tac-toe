@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/particles.dart';
+import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/animation.dart' show Curves;
 import 'package:tic_tac_toe/domain/ai/ai_strategy.dart';
 import 'package:tic_tac_toe/domain/ai/heuristic_ai_strategy.dart';
@@ -43,8 +45,10 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     this.humanPlayer = Player.x,
     this.gameMode = GameMode.classic,
     this.onGameEnded,
+    double Function()? getVolume,
     AiStrategy? aiStrategy,
   }) : _aiStrategy = aiStrategy ?? HeuristicAiStrategy(),
+       _getVolume = getVolume ?? (() => 1),
        super(size: size, position: position, anchor: Anchor.center) {
     // Rendered as a separate, higher-priority child so it draws on top of
     // the mark components rather than underneath them (components render
@@ -72,6 +76,10 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   final AiStrategy _aiStrategy;
   final Random _random = Random();
 
+  /// Read fresh on every placement rather than captured once, so a mid-game
+  /// volume/mute change (via the settings cog) takes effect immediately.
+  final double Function() _getVolume;
+
   static const int _gridLines = 3;
   static const double _durationPerLine = 0.3;
   static const double _aiThinkingDelay = 0.5;
@@ -87,7 +95,7 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   static const double totalDrawDuration = _durationPerLine * 4;
 
   final Paint _linePaint = Paint()
-    ..color = AppColors.accent
+    ..color = AppColors.textLight
     ..style = PaintingStyle.stroke
     ..strokeWidth = 6
     ..strokeCap = StrokeCap.round;
@@ -221,6 +229,7 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     final Offset cellCenter = _cellCenter(position);
     _placeMarkComponent(position, player, cellCenter);
     _spawnPlacementParticles(player, cellCenter);
+    _playPlacementSound(player);
 
     if (_status == GameStatus.xWon || _status == GameStatus.oWon) {
       _startWinSequence();
@@ -328,6 +337,24 @@ class BoardComponent extends PositionComponent with TapCallbacks {
         ),
       ),
     );
+  }
+
+  /// Plays the placement sound for [player]. Swallows any playback failure
+  /// (e.g. no audio output, or no platform audio plugin in a test
+  /// environment) rather than letting it interrupt gameplay.
+  void _playPlacementSound(Player player) {
+    final String file = player == Player.x ? 'place_x.ogg' : 'place_o.ogg';
+    unawaited(_playSoundSafely(file));
+  }
+
+  Future<void> _playSoundSafely(String file) async {
+    final double volume = _getVolume();
+    if (volume <= 0) return;
+    try {
+      await FlameAudio.play(file, volume: volume);
+    } catch (_) {
+      // Best-effort — a missing audio backend shouldn't interrupt gameplay.
+    }
   }
 
   void _startWinSequence() {

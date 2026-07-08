@@ -11,6 +11,7 @@ import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/entities/position.dart';
 import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
 import 'package:tic_tac_toe/presentation/game/title_screen_game.dart';
+import 'package:tic_tac_toe/presentation/providers/audio_settings_provider.dart';
 import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 class TitleScreen extends StatefulWidget {
@@ -43,6 +44,9 @@ class _TitleScreenState extends State<TitleScreen> {
                   (BuildContext context, TitleScreenGame game) =>
                       _GameEndOverlay(game: game),
             },
+            initialActiveOverlays: const <String>[
+              TitleScreenGame.settingsOverlayKey,
+            ],
           ),
           if (kDebugMode) _DevControls(game: _game),
         ],
@@ -115,8 +119,9 @@ class _DevButton extends StatelessWidget {
   }
 }
 
-/// Settings cog shown in the top-right corner once the board is on screen
-/// (see [TitleScreenGame.settingsOverlayKey]). Opens the in-game menu.
+/// Settings cog shown in the top-right corner throughout — title screen and
+/// gameplay alike (see [TitleScreenGame.settingsOverlayKey]). Opens a menu
+/// with a volume control and, mid-game, a "Quit game" button.
 class _SettingsCogButton extends StatelessWidget {
   const _SettingsCogButton({required this.game});
 
@@ -151,47 +156,63 @@ class _SettingsCogButton extends StatelessWidget {
       context: context,
       builder: (BuildContext dialogContext) => _ThemedDialog(
         title: 'Menu',
+        content: const _AudioSettingsRow(),
         buttons: <Widget>[
-          _DialogButton(
-            label: 'Stop playing',
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _showQuitConfirmationDialog(context);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showQuitConfirmationDialog(BuildContext context) async {
-    await showDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => _ThemedDialog(
-        title: 'Are you sure you want to quit this game?',
-        buttons: <Widget>[
-          _DialogButton(
-            label: 'Yes',
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              game.returnToTitle();
-            },
-          ),
-          const SizedBox(width: 12),
-          _DialogButton(
-            label: 'No',
-            onPressed: () => Navigator.of(dialogContext).pop(),
-          ),
+          if (game.isPlaying)
+            _DialogButton(
+              label: 'Quit game',
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                game.returnToTitle();
+              },
+            ),
         ],
       ),
     );
   }
 }
 
+/// A volume slider with a mute toggle to its right, backed by
+/// [audioSettingsProvider].
+class _AudioSettingsRow extends ConsumerWidget {
+  const _AudioSettingsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AudioSettings settings = ref.watch(audioSettingsProvider);
+    final AudioSettingsController controller = ref.read(audioSettingsProvider.notifier);
+
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppColors.accent,
+              inactiveTrackColor: AppColors.textLight.withValues(alpha: 0.3),
+              thumbColor: AppColors.accent,
+            ),
+            child: Slider(
+              value: settings.muted ? 0 : settings.volume,
+              onChanged: controller.setVolume,
+            ),
+          ),
+        ),
+        IconButton(
+          icon: Icon(
+            settings.muted ? Icons.volume_off : Icons.volume_up,
+            color: AppColors.textLight,
+          ),
+          onPressed: controller.toggleMute,
+        ),
+      ],
+    );
+  }
+}
+
 /// Shown once a round ends (see [TitleScreenGame.gameEndOverlayKey]): a
-/// looping replay of the round's moves on a teal block, the result, and a
-/// "Play again" link — styled after a dark-chrome card with a colored
-/// insert.
+/// looping replay of the round's moves on a teal block, the result, a chunky
+/// "Play again" button, and a "Main menu" link — styled after a dark-chrome
+/// card with a colored insert.
 class _GameEndOverlay extends StatelessWidget {
   const _GameEndOverlay({required this.game});
 
@@ -257,15 +278,25 @@ class _GameEndOverlay extends StatelessWidget {
                       ],
                     ),
                   ),
-                  TextButton(
-                    onPressed: game.playAgain,
-                    child: const Text(
-                      'Play again',
-                      style: TextStyle(
-                        color: AppColors.canvasBackground,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        _PlayAgainButton(onPressed: game.playAgain),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: game.returnToTitle,
+                          child: const Text(
+                            'Main menu',
+                            style: TextStyle(
+                              color: AppColors.canvasBackground,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -273,6 +304,69 @@ class _GameEndOverlay extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The win/draw overlay's primary action: a chunky, pressable button styled
+/// to match [MenuButtonComponent]'s 3D "shelf" look, since this overlay is a
+/// Flutter widget rather than a Flame component.
+class _PlayAgainButton extends StatefulWidget {
+  const _PlayAgainButton({required this.onPressed});
+
+  final void Function() onPressed;
+
+  @override
+  State<_PlayAgainButton> createState() => _PlayAgainButtonState();
+}
+
+class _PlayAgainButtonState extends State<_PlayAgainButton> {
+  static const double _shelfHeight = 6;
+  static const Duration _pressDuration = Duration(milliseconds: 80);
+
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onPressed();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.accentShadow,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: AnimatedContainer(
+          duration: _pressDuration,
+          curve: Curves.easeOut,
+          margin: EdgeInsets.only(bottom: _pressed ? 0 : _shelfHeight),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 36),
+          decoration: BoxDecoration(
+            color: AppColors.accent,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.replay_rounded, color: AppColors.textLight, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Play again',
+                style: TextStyle(
+                  color: AppColors.textLight,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -413,12 +507,14 @@ class _ReplayBoardPainter extends CustomPainter {
   bool shouldRepaint(covariant _ReplayBoardPainter oldDelegate) => true;
 }
 
-/// A dialog styled to match the game's bright teal/coral theme, with a title
-/// and a row of [buttons] below it.
+/// A dialog styled to match the game's bright teal/coral theme, with a
+/// title, optional [content] below it, and a row of [buttons] at the
+/// bottom.
 class _ThemedDialog extends StatelessWidget {
-  const _ThemedDialog({required this.title, required this.buttons});
+  const _ThemedDialog({required this.title, this.content, this.buttons = const <Widget>[]});
 
   final String title;
+  final Widget? content;
   final List<Widget> buttons;
 
   @override
@@ -443,8 +539,14 @@ class _ThemedDialog extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 20),
-            Row(mainAxisSize: MainAxisSize.min, children: buttons),
+            if (content != null) ...<Widget>[
+              const SizedBox(height: 12),
+              content!,
+            ],
+            if (buttons.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 20),
+              Row(mainAxisSize: MainAxisSize.min, children: buttons),
+            ],
           ],
         ),
       ),
