@@ -9,9 +9,11 @@ import 'package:tic_tac_toe/domain/ai/ai_strategy.dart';
 import 'package:tic_tac_toe/domain/ai/heuristic_ai_strategy.dart';
 import 'package:tic_tac_toe/domain/commands/place_mark_command.dart';
 import 'package:tic_tac_toe/domain/entities/board.dart' as domain;
+import 'package:tic_tac_toe/domain/entities/game_mode.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/entities/position.dart';
+import 'package:tic_tac_toe/presentation/game/components/eviction_warning_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/mark_component.dart';
 import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
@@ -27,12 +29,19 @@ import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 /// since there's no line to trace) with the full [PlaceMarkCommand] history
 /// of the round, and the board can be replayed in place via
 /// [resetForNewRound].
+///
+/// In [GameMode.endless], a player placing one more mark than the cap allows
+/// bumps their oldest one off the board (see [_tryPlaceMark]) — its
+/// [MarkComponent] plays a shrink animation rather than vanishing outright.
+/// Once the player about to move is at the cap, an [EvictionWarningComponent]
+/// badges whichever mark of theirs is next in line.
 class BoardComponent extends PositionComponent with TapCallbacks {
   BoardComponent({
     required Vector2 size,
     required Vector2 position,
     required this.vsAi,
     this.humanPlayer = Player.x,
+    this.gameMode = GameMode.classic,
     this.onGameEnded,
     AiStrategy? aiStrategy,
   }) : _aiStrategy = aiStrategy ?? HeuristicAiStrategy(),
@@ -50,6 +59,9 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   /// Which mark the human plays as (irrelevant when [vsAi] is false — X
   /// always starts, and both players are human either way).
   final Player humanPlayer;
+
+  /// Which piece-cap rule governs this round.
+  final GameMode gameMode;
 
   /// Called once the end-of-game presentation has finished: right away on a
   /// draw, or after the winning line finishes tracing on a win. Includes the
@@ -89,6 +101,9 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   final Map<int, MarkComponent> _markComponents = <int, MarkComponent>{};
   final List<PlaceMarkCommand> _moveHistory = <PlaceMarkCommand>[];
 
+  EvictionWarningComponent? _evictionWarning;
+  Position? _evictionWarningPosition;
+
   double _elapsed = 0;
   double? _aiMoveAt;
   double _winLineTraceElapsed = 0;
@@ -109,6 +124,10 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   /// Every mark placed so far this round, in the order it was played.
   List<PlaceMarkCommand> get moveHistory =>
       List<PlaceMarkCommand>.unmodifiable(_moveHistory);
+
+  /// The position currently badged with an [EvictionWarningComponent], if
+  /// any — exposed mainly so tests can assert on it directly.
+  Position? get evictionWarningPosition => _evictionWarningPosition;
 
   bool get _animationDone => _elapsed >= totalDrawDuration;
   bool get _isHumanTurn => !vsAi || _currentPlayer == humanPlayer;
@@ -188,8 +207,11 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     final PlaceMarkCommand command = PlaceMarkCommand(
       position: position,
       player: player,
+      mode: gameMode,
     );
     if (!command.canExecute(_board)) return;
+
+    _evictOldestMarkIfAtCap(player);
 
     _board = command.execute(_board);
     _moveHistory.add(command);
@@ -205,6 +227,57 @@ class BoardComponent extends PositionComponent with TapCallbacks {
     } else if (!_status.isGameOver && vsAi && _currentPlayer == humanPlayer.opponent) {
       _aiMoveAt = _elapsed + _aiThinkingDelay;
     }
+
+    _updateEvictionWarning();
+  }
+
+  /// Mirrors [domain.Board.placeMark]'s eviction rule so the outgoing mark's
+  /// [MarkComponent] can play a shrink animation, rather than just vanishing
+  /// the instant the domain board drops it. Reading the *current* board
+  /// keeps this in lockstep with the domain logic without duplicating it —
+  /// it only decides whether an eviction is about to happen, not how.
+  void _evictOldestMarkIfAtCap(Player player) {
+    final int? maxPieces = gameMode.maxPiecesPerPlayer;
+    if (maxPieces == null) return;
+
+    final List<Position> ownPieces = _board.piecesOf(player);
+    if (ownPieces.length < maxPieces) return;
+
+    final Position oldest = ownPieces.first;
+    _markComponents.remove(oldest.index)?.playEraseAnimation();
+  }
+
+  /// Badges whichever mark is about to be bumped off the board on
+  /// [_currentPlayer]'s next move — cleared once the game ends or that
+  /// player isn't at their cap (yet).
+  void _updateEvictionWarning() {
+    final int? maxPieces = gameMode.maxPiecesPerPlayer;
+    final List<Position> ownPieces = maxPieces == null
+        ? const <Position>[]
+        : _board.piecesOf(_currentPlayer);
+
+    if (maxPieces == null || _status.isGameOver || ownPieces.length < maxPieces) {
+      _evictionWarning?.removeFromParent();
+      _evictionWarning = null;
+      _evictionWarningPosition = null;
+      return;
+    }
+
+    final Position atRisk = ownPieces.first;
+    if (atRisk == _evictionWarningPosition) return;
+    _evictionWarningPosition = atRisk;
+
+    final double cellSize = min(size.x, size.y) / _gridLines;
+    final Offset cellCenter = _cellCenter(atRisk);
+    final Vector2 badgePosition =
+        Vector2(cellCenter.dx, cellCenter.dy) +
+        Vector2(cellSize, -cellSize) * 0.32;
+
+    _evictionWarning?.removeFromParent();
+    _evictionWarning = EvictionWarningComponent(diameter: cellSize * 0.3)
+      ..position = badgePosition
+      ..priority = 6;
+    add(_evictionWarning!);
   }
 
   void _makeAiMove() {
@@ -279,11 +352,17 @@ class BoardComponent extends PositionComponent with TapCallbacks {
   /// [vsAi]/[humanPlayer] settings and without replaying the grid's
   /// draw-in animation (it's already fully drawn).
   void resetForNewRound() {
-    for (final MarkComponent mark in _markComponents.values) {
+    // Not just `_markComponents.values` — an evicted mark (endless mode) is
+    // dropped from that map right away but lingers a moment longer to
+    // finish its own shrink animation, so it has to be swept up here too.
+    for (final MarkComponent mark in children.whereType<MarkComponent>().toList()) {
       mark.removeFromParent();
     }
     _markComponents.clear();
     _moveHistory.clear();
+    _evictionWarning?.removeFromParent();
+    _evictionWarning = null;
+    _evictionWarningPosition = null;
 
     _board = domain.Board();
     _currentPlayer = Player.x;

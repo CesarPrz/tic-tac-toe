@@ -6,12 +6,14 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tic_tac_toe/domain/commands/place_mark_command.dart';
+import 'package:tic_tac_toe/domain/entities/game_mode.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
 import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
 import 'package:tic_tac_toe/presentation/game/components/board_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/circle_wipe_component.dart';
+import 'package:tic_tac_toe/presentation/game/components/game_mode_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/mark_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/menu_button_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/opponent_selector_component.dart';
@@ -19,6 +21,7 @@ import 'package:tic_tac_toe/presentation/game/components/outlined_text_component
 import 'package:tic_tac_toe/presentation/game/components/panel_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/raining_marks_background.dart';
 import 'package:tic_tac_toe/presentation/game/components/scrolling_marks_background.dart';
+import 'package:tic_tac_toe/presentation/providers/game_mode_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/opponent_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/player_mark_provider.dart';
 import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
@@ -41,6 +44,7 @@ class TitleScreenGame extends FlameGame<World> {
   static final Vector2 _selectorSize = Vector2(260, 96);
   static final Vector2 _markSelectorSize = Vector2(260, 76);
   static const double _buttonGap = 24.0;
+  static const double _selectorGap = 16.0;
   static const double _panelPadding = 28.0;
 
   // Picked once per app run (lazy static initializer) so every visit to the
@@ -61,6 +65,7 @@ class TitleScreenGame extends FlameGame<World> {
   StreamSubscription<GravityDirection>? _gravitySubscription;
   ProviderSubscription<Opponent>? _opponentSubscription;
   ProviderSubscription<Player>? _playerMarkSubscription;
+  ProviderSubscription<GameMode>? _gameModeSubscription;
 
   /// The most recent direction "down" points toward, read by
   /// [RainingMarksBackground] every frame.
@@ -99,6 +104,14 @@ class TitleScreenGame extends FlameGame<World> {
         onToggle: () => container.read(opponentProvider.notifier).toggle(),
       );
 
+  late final GameModeSelectorComponent _gameModeSelector =
+      GameModeSelectorComponent(
+        size: _selectorSize,
+        position: Vector2.zero(),
+        initialMode: container.read(gameModeProvider),
+        onToggle: () => container.read(gameModeProvider.notifier).toggle(),
+      );
+
   late final MarkSelectorComponent _markSelector = MarkSelectorComponent(
     size: _markSelectorSize,
     position: Vector2.zero(),
@@ -135,8 +148,19 @@ class TitleScreenGame extends FlameGame<World> {
       playerMarkProvider,
       (Player? previous, Player next) => _markSelector.updateSelected(next),
     );
+    _gameModeSubscription = container.listen<GameMode>(
+      gameModeProvider,
+      (GameMode? previous, GameMode next) => _gameModeSelector.updateSelected(next),
+    );
     _background = _createBackground();
-    addAll(<Component>[_background!, _panel, _title, _opponentSelector, _playButton]);
+    addAll(<Component>[
+      _background!,
+      _panel,
+      _title,
+      _opponentSelector,
+      _gameModeSelector,
+      _playButton,
+    ]);
     _layout();
   }
 
@@ -145,6 +169,7 @@ class TitleScreenGame extends FlameGame<World> {
     _gravitySubscription?.cancel();
     _opponentSubscription?.close();
     _playerMarkSubscription?.close();
+    _gameModeSubscription?.close();
     super.onDispose();
   }
 
@@ -186,6 +211,7 @@ class TitleScreenGame extends FlameGame<World> {
   void _beginMarkSelection() {
     _choosingMark = true;
     _opponentSelector.removeFromParent();
+    _gameModeSelector.removeFromParent();
     add(_markSelector);
     _layout();
   }
@@ -208,6 +234,7 @@ class TitleScreenGame extends FlameGame<World> {
     _panel.removeFromParent();
     _title.removeFromParent();
     _opponentSelector.removeFromParent();
+    _gameModeSelector.removeFromParent();
     _markSelector.removeFromParent();
     _playButton.removeFromParent();
 
@@ -216,6 +243,7 @@ class TitleScreenGame extends FlameGame<World> {
       position: size / 2,
       vsAi: container.read(opponentProvider) == Opponent.robot,
       humanPlayer: container.read(playerMarkProvider),
+      gameMode: container.read(gameModeProvider),
       onGameEnded: _handleGameEnded,
     );
     add(_board!);
@@ -248,7 +276,14 @@ class TitleScreenGame extends FlameGame<World> {
     _choosingMark = false;
 
     _background = _createBackground();
-    addAll(<Component>[_background!, _panel, _title, _opponentSelector, _playButton]);
+    addAll(<Component>[
+      _background!,
+      _panel,
+      _title,
+      _opponentSelector,
+      _gameModeSelector,
+      _playButton,
+    ]);
     _layout();
   }
 
@@ -260,29 +295,40 @@ class TitleScreenGame extends FlameGame<World> {
     _layout();
   }
 
+  /// The selector(s) shown above the Play button for the current step: both
+  /// the opponent and game mode selectors on the initial screen, or just the
+  /// mark selector once [_choosingMark].
+  List<PositionComponent> get _activeSelectors => _choosingMark
+      ? <PositionComponent>[_markSelector]
+      : <PositionComponent>[_opponentSelector, _gameModeSelector];
+
   void _layout() {
     final Vector2 center = size / 2;
     _title.position = Vector2(center.x, center.y - 130);
 
-    final Vector2 activeSelectorSize = _choosingMark ? _markSelectorSize : _selectorSize;
-
-    final double selectorY = center.y + 10;
-    if (_choosingMark) {
-      _markSelector.position = Vector2(center.x, selectorY);
-    } else {
-      _opponentSelector.position = Vector2(center.x, selectorY);
+    final List<PositionComponent> activeSelectors = _activeSelectors;
+    double cursorY = center.y + 10;
+    double maxSelectorWidth = 0;
+    for (int i = 0; i < activeSelectors.length; i++) {
+      final PositionComponent selector = activeSelectors[i];
+      if (i > 0) {
+        cursorY +=
+            activeSelectors[i - 1].size.y / 2 + _selectorGap + selector.size.y / 2;
+      }
+      selector.position = Vector2(center.x, cursorY);
+      maxSelectorWidth = max(maxSelectorWidth, selector.size.x);
     }
 
     final double buttonY =
-        selectorY + activeSelectorSize.y / 2 + _buttonGap + _buttonSize.y / 2;
+        cursorY + activeSelectors.last.size.y / 2 + _buttonGap + _buttonSize.y / 2;
     _playButton.position = Vector2(center.x, buttonY);
 
-    final double panelTop = selectorY - activeSelectorSize.y / 2;
+    final double panelTop = (center.y + 10) - activeSelectors.first.size.y / 2;
     final double panelBottom = buttonY + _buttonSize.y / 2;
     _panel
       ..position = Vector2(center.x, (panelTop + panelBottom) / 2)
       ..size = Vector2(
-        max(activeSelectorSize.x, _buttonSize.x) + _panelPadding * 2,
+        max(maxSelectorWidth, _buttonSize.x) + _panelPadding * 2,
         (panelBottom - panelTop) + _panelPadding * 2,
       );
 

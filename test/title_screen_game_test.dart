@@ -3,17 +3,20 @@ import 'package:flame_test/flame_test.dart';
 import 'package:flutter/widgets.dart' show BuildContext, SizedBox;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tic_tac_toe/domain/entities/game_mode.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/gravity_direction.dart';
 import 'package:tic_tac_toe/domain/repositories/gravity_repository.dart';
 import 'package:tic_tac_toe/domain/usecases/watch_gravity.dart';
 import 'package:tic_tac_toe/presentation/game/components/board_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/circle_wipe_component.dart';
+import 'package:tic_tac_toe/presentation/game/components/game_mode_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/mark_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/mark_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/menu_button_component.dart';
 import 'package:tic_tac_toe/presentation/game/components/opponent_selector_component.dart';
 import 'package:tic_tac_toe/presentation/game/title_screen_game.dart';
+import 'package:tic_tac_toe/presentation/providers/game_mode_provider.dart';
 import 'package:tic_tac_toe/presentation/providers/opponent_provider.dart';
 
 class _FakeGravityRepository implements GravityRepository {
@@ -45,6 +48,7 @@ void main() {
       game.update(0);
 
       expect(game.children.whereType<OpponentSelectorComponent>().length, 1);
+      expect(game.children.whereType<GameModeSelectorComponent>().length, 1);
       expect(game.children.whereType<MenuButtonComponent>().length, 1);
       expect(game.children.whereType<BoardComponent>(), isEmpty);
 
@@ -74,6 +78,7 @@ void main() {
 
       expect(game.children.whereType<CircleWipeComponent>(), isEmpty);
       expect(game.children.whereType<OpponentSelectorComponent>(), isEmpty);
+      expect(game.children.whereType<GameModeSelectorComponent>(), isEmpty);
       expect(game.children.whereType<MenuButtonComponent>(), isEmpty);
       expect(game.children.whereType<BoardComponent>().length, 1);
       expect(
@@ -91,7 +96,36 @@ void main() {
       );
       expect(game.children.whereType<BoardComponent>(), isEmpty);
       expect(game.children.whereType<OpponentSelectorComponent>().length, 1);
+      expect(game.children.whereType<GameModeSelectorComponent>().length, 1);
       expect(game.children.whereType<MenuButtonComponent>().length, 1);
+
+      game.container.dispose();
+    },
+  );
+
+  testWithGame<TitleScreenGame>(
+    'the selected game mode is passed through to the board',
+    _newGame,
+    (TitleScreenGame game) async {
+      await game.ready();
+      game.overlays.addEntry(
+        TitleScreenGame.settingsOverlayKey,
+        (BuildContext context, Game game) => const SizedBox.shrink(),
+      );
+      // Hotseat mode, so Play transitions immediately.
+      game.container.read(opponentProvider.notifier).toggle();
+      game.container.read(gameModeProvider.notifier).toggle(); // -> endless
+      game.update(0);
+
+      final MenuButtonComponent playButton = game.children
+          .whereType<MenuButtonComponent>()
+          .firstWhere((MenuButtonComponent button) => button.label == 'Play');
+      playButton.onPressed();
+      game.update(0.7);
+      game.update(0);
+
+      final BoardComponent board = game.children.whereType<BoardComponent>().single;
+      expect(board.gameMode, GameMode.endless);
 
       game.container.dispose();
     },
@@ -118,6 +152,11 @@ void main() {
         game.children.whereType<OpponentSelectorComponent>(),
         isEmpty,
         reason: 'the opponent selector is swapped out for the mark selector',
+      );
+      expect(
+        game.children.whereType<GameModeSelectorComponent>(),
+        isEmpty,
+        reason: 'the game mode selector is swapped out too',
       );
       expect(game.children.whereType<MarkSelectorComponent>().length, 1);
       expect(

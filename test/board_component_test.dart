@@ -3,6 +3,7 @@ import 'package:flame/game.dart';
 import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tic_tac_toe/domain/commands/place_mark_command.dart';
+import 'package:tic_tac_toe/domain/entities/game_mode.dart';
 import 'package:tic_tac_toe/domain/entities/game_status.dart';
 import 'package:tic_tac_toe/domain/entities/player.dart';
 import 'package:tic_tac_toe/domain/entities/position.dart';
@@ -13,6 +14,7 @@ Future<BoardComponent> _readyBoard(
   FlameGame<World> game, {
   required bool vsAi,
   Player humanPlayer = Player.x,
+  GameMode gameMode = GameMode.classic,
   void Function(GameStatus status, List<PlaceMarkCommand> moveHistory)? onGameEnded,
 }) async {
   final BoardComponent board = BoardComponent(
@@ -20,6 +22,7 @@ Future<BoardComponent> _readyBoard(
     position: Vector2.all(150),
     vsAi: vsAi,
     humanPlayer: humanPlayer,
+    gameMode: gameMode,
     onGameEnded: onGameEnded,
   );
   await game.add(board);
@@ -358,6 +361,108 @@ void main() {
     expect(board.moveHistory[0].player, Player.x);
     expect(board.moveHistory[1].position, const Position(1, 0));
     expect(board.moveHistory[1].player, Player.o);
+  });
+
+  testWithFlameGame(
+    'endless mode: a 4th mark bumps the player\'s oldest one off the board',
+    (FlameGame<World> game) async {
+      final BoardComponent board = await _readyBoard(
+        game,
+        vsAi: false,
+        gameMode: GameMode.endless,
+      );
+
+      // X: 0, 1, 3 (no accidental line). O: 2, 5, 6 (same).
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(0))); // X
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(2))); // O
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(1))); // X
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(5))); // O
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(3))); // X (3rd)
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(6))); // O (3rd)
+      game.update(0);
+
+      expect(board.markAt(const Position(0, 0)), Player.x, reason: 'not evicted yet');
+      expect(board.children.whereType<MarkComponent>(), hasLength(6));
+
+      // X's 4th mark bumps its oldest (index 0) off the board.
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(4)));
+      game.update(0);
+
+      expect(board.status, GameStatus.inProgress);
+      expect(board.markAt(const Position(0, 0)), isNull, reason: 'the oldest X mark was erased');
+      expect(board.markAt(Position.fromIndex(4)), Player.x);
+      expect(
+        board.children.whereType<MarkComponent>(),
+        hasLength(7),
+        reason: 'the erased mark lingers to play its shrink animation',
+      );
+
+      // Once the shrink animation finishes, the erased mark's component is
+      // actually removed.
+      game.update(MarkComponent.eraseAnimationDuration);
+      game.update(0);
+      expect(board.children.whereType<MarkComponent>(), hasLength(6));
+    },
+  );
+
+  testWithFlameGame(
+    'endless mode: the eviction warning badges the at-risk player\'s oldest mark',
+    (FlameGame<World> game) async {
+      final BoardComponent board = await _readyBoard(
+        game,
+        vsAi: false,
+        gameMode: GameMode.endless,
+      );
+
+      expect(board.evictionWarningPosition, isNull, reason: 'nobody is at the cap yet');
+
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(0))); // X
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(2))); // O
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(1))); // X
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(5))); // O
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(3))); // X (3rd)
+      game.update(0);
+
+      expect(
+        board.evictionWarningPosition,
+        isNull,
+        reason: "it's O's turn next, and O isn't at the cap yet",
+      );
+
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(6))); // O (3rd)
+      game.update(0);
+
+      expect(
+        board.evictionWarningPosition,
+        const Position(0, 0),
+        reason: "it's X's turn next, and X's oldest mark (0,0) is at risk",
+      );
+
+      // X's next move evicts (0,0) and now O is the one at the cap.
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(4)));
+      game.update(0);
+
+      expect(board.evictionWarningPosition, const Position(0, 2));
+    },
+  );
+
+  testWithFlameGame('classic mode never evicts, regardless of piece count', (
+    FlameGame<World> game,
+  ) async {
+    final BoardComponent board = await _readyBoard(game, vsAi: false);
+
+    // Same safe, no-premature-win tap order used for the draw scenario
+    // elsewhere in this file — ends with X holding 5 marks (0,2,3,7,8) and O
+    // holding 4 (1,4,5,6), filling the board without either player winning.
+    const List<int> tapOrder = <int>[0, 1, 2, 4, 3, 5, 7, 6, 8];
+    for (final int index in tapOrder) {
+      board.handleTapAt(_cellCenterForTest(Position.fromIndex(index)));
+    }
+    game.update(0);
+
+    expect(board.status, GameStatus.draw);
+    expect(board.markAt(const Position(0, 0)), Player.x, reason: 'classic mode has no cap');
+    expect(board.children.whereType<MarkComponent>(), hasLength(9));
   });
 }
 
