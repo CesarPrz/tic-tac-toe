@@ -37,7 +37,7 @@ class TicTacToeApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Tic Tac Toe',
+      title: 'Endless Tic Tac Toe',
       theme: AppTheme.themeData,
       home: TitleScreen(watchGravity: watchGravity),
     );

@@ -1,5 +1,5 @@
 name: tic_tac_toe
-description: "A new Flutter project."
+description: "Endless Tic Tac Toe"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -51,6 +51,19 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   flame_test: ^2.2.4
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  image_path: "assets/icons/tictactoe_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+  windows:
+    generate: true
+  macos:
+    generate: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
