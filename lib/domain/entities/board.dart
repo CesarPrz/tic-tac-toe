@@ -16,15 +16,29 @@ const List<List<int>> winningLines = <List<int>>[
 
 /// Immutable 3x3 tic-tac-toe grid.
 class Board {
-  Board({List<Player?>? cells})
+  Board({List<Player?>? cells, Map<Player, List<Position>>? placementOrder})
     : cells = List<Player?>.unmodifiable(
         cells ??
             List<Player?>.filled(Position.boardSize * Position.boardSize, null),
-      );
+      ),
+      placementOrder = <Player, List<Position>>{
+        for (final Player player in Player.values)
+          player: List<Position>.unmodifiable(
+            placementOrder?[player] ?? const <Position>[],
+          ),
+      };
 
   final List<Player?> cells;
 
+  /// Each player's marks currently on the board, oldest first — used by
+  /// [placeMark] to know which one to erase when a per-player piece cap is
+  /// exceeded (endless mode).
+  final Map<Player, List<Position>> placementOrder;
+
   Player? at(Position position) => cells[position.index];
+
+  /// [player]'s marks currently on the board, oldest first.
+  List<Position> piecesOf(Player player) => placementOrder[player]!;
 
   bool get isFull => cells.every((Player? cell) => cell != null);
 
@@ -59,10 +73,34 @@ class Board {
     return GameStatus.inProgress;
   }
 
-  Board placeMark(Position position, Player player) {
+  /// Places [player]'s mark at [position]. If [maxPiecesPerPlayer] is set
+  /// and [player] already has that many marks on the board, their oldest one
+  /// is erased first (endless mode) — otherwise it accumulates without
+  /// limit (classic mode).
+  Board placeMark(
+    Position position,
+    Player player, {
+    int? maxPiecesPerPlayer,
+  }) {
     assert(at(position) == null, 'Cannot place a mark on an occupied cell');
-    final List<Player?> updated = List<Player?>.of(cells);
-    updated[position.index] = player;
-    return Board(cells: updated);
+    final List<Player?> updatedCells = List<Player?>.of(cells);
+    final List<Position> updatedOwnPieces = List<Position>.of(
+      placementOrder[player]!,
+    );
+
+    if (maxPiecesPerPlayer != null &&
+        updatedOwnPieces.length >= maxPiecesPerPlayer) {
+      final Position oldest = updatedOwnPieces.removeAt(0);
+      updatedCells[oldest.index] = null;
+    }
+
+    updatedCells[position.index] = player;
+    updatedOwnPieces.add(position);
+
+    final Map<Player, List<Position>> updatedOrder = <Player, List<Position>>{
+      ...placementOrder,
+      player: updatedOwnPieces,
+    };
+    return Board(cells: updatedCells, placementOrder: updatedOrder);
   }
 }

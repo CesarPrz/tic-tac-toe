@@ -30,4 +30,11 @@ abstract final class AppColors {
 
   /// Muted slate used for the big drawn mark on the win/draw overlay.
   static const Color overlayMark = Color(0xFF4A4E57);
+
+  /// Warning bubble shown on the mark about to be bumped off the board next
+  /// (endless mode).
+  static const Color warning = Color(0xFFFFD23F);
+
+  /// "!" text/outline against the [warning] bubble.
+  static const Color warningText = Color(0xFF3A2E00);
 }

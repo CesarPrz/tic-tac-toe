@@ -8,7 +8,9 @@ import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
 
 /// A single X or O placed on the board. When it's part of the winning line,
 /// [playWinAnimation] makes it levitate, turn over (via [Rotate3DDecorator]),
-/// and settle back down before the winning line traces through it.
+/// and settle back down before the winning line traces through it. In
+/// endless mode, [playEraseAnimation] shrinks it away instead, when it's
+/// bumped off the board to make room for its owner's next mark.
 class MarkComponent extends PositionComponent {
   MarkComponent({
     required this.player,
@@ -28,6 +30,7 @@ class MarkComponent extends PositionComponent {
   final Vector2 _basePosition;
 
   static const double winAnimationDuration = 1.0;
+  static const double eraseAnimationDuration = 0.25;
   static const double _liftHeight = 26;
   static const double _strokeWidth = 10;
 
@@ -46,6 +49,9 @@ class MarkComponent extends PositionComponent {
   // wait was.
   double _winElapsed = 0;
 
+  bool _erasing = false;
+  double _eraseElapsed = 0;
+
   bool get isWinAnimationDone =>
       !_winAnimating || _winElapsed >= winAnimationDuration;
 
@@ -58,9 +64,24 @@ class MarkComponent extends PositionComponent {
     _winElapsed = -delay;
   }
 
+  /// Shrinks this mark away and removes it once done — played on a mark
+  /// that's bumped off the board in endless mode to make room for its
+  /// owner's next one.
+  void playEraseAnimation() {
+    _erasing = true;
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
+
+    if (_erasing) {
+      _eraseElapsed = min(_eraseElapsed + dt, eraseAnimationDuration);
+      scale = Vector2.all(1 - _eraseElapsed / eraseAnimationDuration);
+      if (_eraseElapsed >= eraseAnimationDuration) removeFromParent();
+      return;
+    }
+
     if (!_winAnimating || _winElapsed >= winAnimationDuration) return;
 
     _winElapsed = min(_winElapsed + dt, winAnimationDuration);
