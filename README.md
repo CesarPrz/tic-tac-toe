@@ -15,9 +15,16 @@ one off, so the game never ends in a draw, only a win.
   number of pieces (see `GameMode` in the domain layer); once you're at the
   cap, an on-board warning badge shows which of your marks is about to be
   bumped off on your next move.
+  
+<img width="410" height="729" alt="qemu-system-x86_64_Z7BVmd51tx" src="https://github.com/user-attachments/assets/0b572a46-431b-48ac-9a8f-50c6e7b69b11" />
+
+  
 - **Replay on the results screen** — the win/draw screen loops a short replay
   of the round's moves, reconstructed from the same move history the game
   itself recorded.
+  
+  <img width="333" height="390" alt="qemu-system-x86_64_L27kcBWThn" src="https://github.com/user-attachments/assets/b70f28e6-470b-497c-b053-49ba99faa2c7" />
+
 - **Sound, volume, and mute** — placement sounds with a volume slider and mute
   toggle in the in-game settings menu.
 - Two title-screen background animations (a scrolling grid and a
