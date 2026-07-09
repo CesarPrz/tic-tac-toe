@@ -47,6 +47,7 @@ class TitleScreenGame extends FlameGame<World> {
   static const double _buttonGap = 24.0;
   static const double _selectorGap = 16.0;
   static const double _panelPadding = 28.0;
+  static const double _titleGap = 4.0;
 
   /// Fraction of the shorter screen dimension used for each mark picker's
   /// diameter, and where its center sits along the screen's width.
@@ -94,6 +95,18 @@ class TitleScreenGame extends FlameGame<World> {
     fillColor: AppColors.textLight,
     outlineColor: AppColors.ink,
     outlineWidth: 6,
+    letterSpacing: 2,
+  );
+
+  /// Sits directly above [_title], larger and in the contrast color, to call
+  /// out this app's name — "Endless Tic Tac Toe" — rather than just the
+  /// generic game title.
+  late final OutlinedTextComponent _endlessLabel = OutlinedTextComponent(
+    text: 'ENDLESS',
+    fontSize: 52,
+    fillColor: AppColors.accent,
+    outlineColor: const Color.fromARGB(255, 36, 35, 35),
+    outlineWidth: 7,
     letterSpacing: 2,
   );
 
@@ -159,16 +172,19 @@ class TitleScreenGame extends FlameGame<World> {
     );
     _opponentSubscription = container.listen<Opponent>(
       opponentProvider,
-      (Opponent? previous, Opponent next) => _opponentSelector.updateSelected(next),
+      (Opponent? previous, Opponent next) =>
+          _opponentSelector.updateSelected(next),
     );
     _gameModeSubscription = container.listen<GameMode>(
       gameModeProvider,
-      (GameMode? previous, GameMode next) => _gameModeSelector.updateSelected(next),
+      (GameMode? previous, GameMode next) =>
+          _gameModeSelector.updateSelected(next),
     );
     _background = _createBackground();
     addAll(<Component>[
       _background!,
       _panel,
+      _endlessLabel,
       _title,
       _opponentSelector,
       _gameModeSelector,
@@ -254,6 +270,7 @@ class TitleScreenGame extends FlameGame<World> {
   void _showBoard() {
     _background?.removeFromParent();
     _panel.removeFromParent();
+    _endlessLabel.removeFromParent();
     _title.removeFromParent();
     _opponentSelector.removeFromParent();
     _gameModeSelector.removeFromParent();
@@ -302,6 +319,7 @@ class TitleScreenGame extends FlameGame<World> {
     addAll(<Component>[
       _background!,
       _panel,
+      _endlessLabel,
       _title,
       _opponentSelector,
       _gameModeSelector,
@@ -321,6 +339,13 @@ class TitleScreenGame extends FlameGame<World> {
   void _layout() {
     final Vector2 center = size / 2;
     _title.position = Vector2(center.x, center.y - 170);
+    _endlessLabel.position = Vector2(
+      center.x,
+      _title.position.y -
+          _title.size.y / 2 -
+          _titleGap -
+          _endlessLabel.size.y / 2,
+    );
 
     if (_choosingMark) {
       _layoutMarkPickers(center);
