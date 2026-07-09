@@ -16,7 +16,7 @@ one off, so the game never ends in a draw, only a win.
   cap, an on-board warning badge shows which of your marks is about to be
   bumped off on your next move.
   
-<img width="410" height="729" alt="qemu-system-x86_64_Z7BVmd51tx" src="https://github.com/user-attachments/assets/0b572a46-431b-48ac-9a8f-50c6e7b69b11" />
+<img width="410" height="729" alt="ezgif-32e877f4698be140" src="https://github.com/user-attachments/assets/b231eea1-a935-49bf-8fab-57612e372b69" />
 
   
 - **Replay on the results screen** — the win/draw screen loops a short replay
