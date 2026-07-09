@@ -1,0 +1,120 @@
+import 'dart:math';
+import 'dart:ui';
+
+import 'package:flame/components.dart';
+import 'package:flame/rendering.dart';
+import 'package:tic_tac_toe/domain/entities/player.dart';
+import 'package:tic_tac_toe/presentation/theme/app_colors.dart';
+
+/// A single X or O placed on the board. When it's part of the winning line,
+/// [playWinAnimation] makes it levitate, turn over (via [Rotate3DDecorator]),
+/// and settle back down before the winning line traces through it. In
+/// endless mode, [playEraseAnimation] shrinks it away instead, when it's
+/// bumped off the board to make room for its owner's next mark.
+class MarkComponent extends PositionComponent {
+  MarkComponent({
+    required this.player,
+    required Vector2 position,
+    required double cellSize,
+  }) : _basePosition = position.clone(),
+       super(
+         position: position,
+         size: Vector2.all(cellSize),
+         anchor: Anchor.center,
+       ) {
+    _rotate3D.center = size / 2;
+    decorator.addLast(_rotate3D);
+  }
+
+  final Player player;
+  final Vector2 _basePosition;
+
+  static const double winAnimationDuration = 1.0;
+  static const double eraseAnimationDuration = 0.25;
+  static const double _liftHeight = 26;
+  static const double _strokeWidth = 10;
+
+  final Rotate3DDecorator _rotate3D = Rotate3DDecorator();
+
+  late final Paint _paint = Paint()
+    ..color = player == Player.x ? AppColors.accent : AppColors.ink
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = _strokeWidth
+    ..strokeCap = StrokeCap.round;
+
+  bool _winAnimating = false;
+  // While waiting out a stagger delay this sits at or below 0; the visible
+  // lift/turn only starts once it crosses into positive territory, and its
+  // own progress (0 to winAnimationDuration) is unaffected by how long the
+  // wait was.
+  double _winElapsed = 0;
+
+  bool _erasing = false;
+  double _eraseElapsed = 0;
+
+  bool get isWinAnimationDone =>
+      !_winAnimating || _winElapsed >= winAnimationDuration;
+
+  /// Starts the "levitate, turn, fall back" animation, optionally waiting
+  /// [delay] seconds first — used to stagger the winning marks so they don't
+  /// all flip in lockstep. Called on marks that are part of the winning line
+  /// once the game ends.
+  void playWinAnimation({double delay = 0}) {
+    _winAnimating = true;
+    _winElapsed = -delay;
+  }
+
+  /// Shrinks this mark away and removes it once done — played on a mark
+  /// that's bumped off the board in endless mode to make room for its
+  /// owner's next one.
+  void playEraseAnimation() {
+    _erasing = true;
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+
+    if (_erasing) {
+      _eraseElapsed = min(_eraseElapsed + dt, eraseAnimationDuration);
+      scale = Vector2.all(1 - _eraseElapsed / eraseAnimationDuration);
+      if (_eraseElapsed >= eraseAnimationDuration) removeFromParent();
+      return;
+    }
+
+    if (!_winAnimating || _winElapsed >= winAnimationDuration) return;
+
+    _winElapsed = min(_winElapsed + dt, winAnimationDuration);
+    if (_winElapsed <= 0) return; // still waiting out the stagger delay
+
+    final double t = _winElapsed / winAnimationDuration;
+
+    // One sine hump over the duration: rises then settles back to place.
+    final double lift = sin(t * pi) * _liftHeight;
+    position = Vector2(_basePosition.x, _basePosition.y - lift);
+
+    // A full turn while airborne.
+    _rotate3D.angleY = t * 2 * pi;
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final Offset center = Offset(size.x / 2, size.y / 2);
+    final double inset = size.x * 0.28;
+
+    if (player == Player.x) {
+      canvas.drawLine(
+        center.translate(-inset, -inset),
+        center.translate(inset, inset),
+        _paint,
+      );
+      canvas.drawLine(
+        center.translate(inset, -inset),
+        center.translate(-inset, inset),
+        _paint,
+      );
+    } else {
+      canvas.drawCircle(center, inset, _paint);
+    }
+  }
+}

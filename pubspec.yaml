@@ -1,5 +1,5 @@
 name: tic_tac_toe
-description: "A new Flutter project."
+description: "Endless Tic Tac Toe"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -34,6 +34,11 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flame: ^1.37.0
+  flame_forge2d: ^0.19.2+6
+  sensors_plus: ^7.1.0
+  flutter_riverpod: ^3.3.2
+  flame_audio: ^2.12.1
 
 dev_dependencies:
   flutter_test:
@@ -45,6 +50,20 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flame_test: ^2.2.4
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  image_path: "assets/icons/tictactoe_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+  windows:
+    generate: true
+  macos:
+    generate: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -56,6 +75,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/sounds/place_o.ogg
+    - assets/sounds/place_x.ogg
 
   # To add assets to your application, add an assets section, like this:
   # assets:
